@@ -100,15 +100,15 @@ const walletSchema = new mongoose.Schema(
 
     isPrimary: {
       type: Boolean,
-      default: false, // One primary wallet per user per network
+      default: false, 
     },
 
-    // Balance Tracking (cached from blockchain)
+    
     balances: {
       native: {
-        // Native currency balance (ETH, MATIC, etc.)
+        
         amount: {
-          type: String, // Store as string to avoid precision issues
+          type: String, 
           default: '0',
         },
         lastUpdated: {
@@ -118,7 +118,7 @@ const walletSchema = new mongoose.Schema(
       },
       tokens: [
         {
-          // ERC-20 token balances
+        
           tokenAddress: {
             type: String,
             lowercase: true,
@@ -142,7 +142,7 @@ const walletSchema = new mongoose.Schema(
       ],
     },
 
-    // Transaction Statistics
+    
     statistics: {
       totalTransactions: {
         type: Number,
@@ -161,13 +161,13 @@ const walletSchema = new mongoose.Schema(
       },
     },
 
-    // Security Features
+    
     security: {
-      // Daily spending limit (in native currency)
+      
       dailyLimit: {
         amount: {
           type: String,
-          default: '0', // 0 means no limit
+          default: '0', 
         },
         spentToday: {
           type: String,
@@ -179,7 +179,7 @@ const walletSchema = new mongoose.Schema(
         },
       },
 
-      // Whitelist of approved addresses
+      
       whitelistedAddresses: [
         {
           address: {
@@ -195,13 +195,13 @@ const walletSchema = new mongoose.Schema(
         },
       ],
 
-      // Require biometric for transactions above this amount
+      
       biometricThreshold: {
         type: String,
-        default: '1000', // In native currency (e.g., 1000 INR worth)
+        default: '1000', 
       },
 
-      // Multi-signature configuration (if enabled)
+      
       multisig: {
         enabled: {
           type: Boolean,
@@ -220,7 +220,7 @@ const walletSchema = new mongoose.Schema(
       },
     },
 
-    // Wallet Metadata
+    
     metadata: {
       label: {
         type: String,
@@ -232,9 +232,9 @@ const walletSchema = new mongoose.Schema(
       description: String,
     },
 
-    // Recovery Configuration
+    
     recovery: {
-      // Social recovery guardians
+    
       guardians: [
         {
           address: String,
@@ -249,7 +249,7 @@ const walletSchema = new mongoose.Schema(
       },
     },
 
-    // Gas Sponsorship Settings (for gasless transactions)
+    
     gasSponsorship: {
       enabled: {
         type: Boolean,
@@ -266,43 +266,35 @@ const walletSchema = new mongoose.Schema(
       },
     },
 
-    // Last Sync with Blockchain
+    
     lastSyncedAt: {
       type: Date,
       default: Date.now,
     },
 
-    // Nonce tracking for transaction ordering
+    
     nonce: {
       type: Number,
       default: 0,
     },
   },
   {
-    timestamps: true, // Adds createdAt and updatedAt
+    timestamps: true, 
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
   }
 );
 
-// ========================
-// Virtual Fields
-// ========================
 
-/**
- * Get formatted native balance
- */
 walletSchema.virtual('formattedBalance').get(function () {
   const balance = parseFloat(this.balances.native.amount);
   return balance.toFixed(4);
 });
 
-/**
- * Check if daily limit is reached
- */
+
 walletSchema.virtual('isDailyLimitReached').get(function () {
   if (this.security.dailyLimit.amount === '0') {
-    return false; // No limit set
+    return false; 
   }
   
   const limit = parseFloat(this.security.dailyLimit.amount);
@@ -320,7 +312,7 @@ walletSchema.index({ network: 1, isActive: 1 });
 walletSchema.index({ 'smartAccountConfig.ownerAddress': 1 });
 walletSchema.index({ createdAt: -1 });
 
-// Compound index for primary wallet per user per network
+
 walletSchema.index({ userId: 1, network: 1, isPrimary: 1 }, { unique: true, partialFilterExpression: { isPrimary: true } });
 
 
@@ -328,7 +320,7 @@ walletSchema.pre('save', function (next) {
   const now = new Date();
   const lastReset = new Date(this.security.dailyLimit.lastResetDate);
   
-  // Check if it's a new day
+  
   if (now.toDateString() !== lastReset.toDateString()) {
     this.security.dailyLimit.spentToday = '0';
     this.security.dailyLimit.lastResetDate = now;
@@ -373,7 +365,7 @@ walletSchema.methods.addSpending = async function (amount) {
   const newSpent = currentSpent + parseFloat(amount);
   const limit = parseFloat(this.security.dailyLimit.amount);
 
-  // Check if limit is set and would be exceeded
+
   if (limit > 0 && newSpent > limit) {
     return false;
   }
