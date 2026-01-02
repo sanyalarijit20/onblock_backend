@@ -14,6 +14,82 @@ const {
 const { createUserOpBuilder } = require('../blockchain/userop.builder');
 const logger = require('../utils/logger');
 
+const calculateFraudSignals = async (userId, walletAddress, to, amount) => {
+  const signals = {};
+
+  const userTransactions = await Transaction.find({ 
+    userId, 
+    status: { $in: ['confirmed', 'submitted'] } 
+  }).sort({ createdAt: -1 });
+
+  if (userTransactions.length > 0) {
+    const amounts = userTransactions.map(tx => parseFloat(tx.amount));
+    const avgAmount = amounts.reduce((a, b) => a + b, 0) / amounts.length;
+    const amountRatio = parseFloat(amount) / avgAmount;
+    
+    signals.amount_ratio = amountRatio;
+    signals.amount_anomaly = amountRatio >= 5 ? 'high' : amountRatio >= 2 ? 'medium' : 'low';
+  } else {
+    signals.amount_ratio = 1;
+    signals.amount_anomaly = 'low';
+  }
+
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+  const recentTxCount = await Transaction.countDocuments({
+    userId,
+    createdAt: { $gte: tenMinutesAgo }
+  });
+
+  signals.tx_frequency = recentTxCount;
+  signals.frequency_risk = recentTxCount > 5 ? 'high' : recentTxCount >= 3 ? 'medium' : 'low';
+
+  if (userTransactions.length > 0) {
+    const lastTx = userTransactions[0];
+    const timeGap = (Date.now() - new Date(lastTx.createdAt).getTime()) / 1000;
+    
+    signals.time_gap_seconds = timeGap;
+    signals.time_gap_risk = timeGap < 10 ? 'high' : 'low';
+  } else {
+    signals.time_gap_seconds = null;
+    signals.time_gap_risk = 'low';
+  }
+
+  const currentHour = new Date().getHours();
+  signals.night_tx = (currentHour >= 0 && currentHour < 5) ? 1 : 0;
+  signals.night_tx_risk = signals.night_tx === 1 ? 'medium' : 'low';
+
+  const pastRecipients = await Transaction.distinct('to', { 
+    userId, 
+    status: { $in: ['confirmed', 'submitted'] } 
+  });
+  
+  signals.new_receiver = pastRecipients.includes(to.toLowerCase()) ? 0 : 1;
+  signals.new_receiver_risk = signals.new_receiver === 1 ? 'medium' : 'low';
+
+  signals.device_change = 0;
+  signals.device_change_risk = 'low';
+
+  return signals;
+};
+
+const calculateOverallRiskScore = (signals) => {
+  let riskScore = 0;
+  const riskWeights = {
+    high: 0.3,
+    medium: 0.15,
+    low: 0.05
+  };
+
+  riskScore += riskWeights[signals.amount_anomaly] || 0;
+  riskScore += riskWeights[signals.frequency_risk] || 0;
+  riskScore += riskWeights[signals.time_gap_risk] || 0;
+  riskScore += riskWeights[signals.night_tx_risk] || 0;
+  riskScore += riskWeights[signals.new_receiver_risk] || 0;
+  riskScore += riskWeights[signals.device_change_risk] || 0;
+
+  return Math.min(riskScore, 1);
+};
+
 const sendTransaction = async (req, res) => {
   try {
     const { to, amount, token, network, biometricData, facialData, metadata } = req.body;
@@ -40,6 +116,9 @@ const sendTransaction = async (req, res) => {
       return errorResponse(res, 'Facial verification failed', 401, 'FACIAL_FAILED');
     }
 
+    const fraudSignals = await calculateFraudSignals(userId, wallet.smartAccountAddress, to, amount);
+    const localRiskScore = calculateOverallRiskScore(fraudSignals);
+
     const fraudAnalysis = await analyzeFraud({
       from: wallet.smartAccountAddress,
       to: to,
@@ -47,11 +126,20 @@ const sendTransaction = async (req, res) => {
       token: token || { symbol: 'ETH' },
       network: network || wallet.network,
       userId: userId.toString(),
-      metadata: metadata || {}
+      metadata: metadata || {},
+      signals: fraudSignals
     });
 
-    if (fraudAnalysis.isBlocked) {
-      return errorResponse(res, 'Transaction blocked due to fraud detection', 403, 'FRAUD_DETECTED');
+    const combinedRiskScore = (localRiskScore + fraudAnalysis.riskScore) / 2;
+
+    const isBlocked = combinedRiskScore > 0.7 || fraudAnalysis.isBlocked;
+
+    if (isBlocked) {
+      return errorResponse(res, 'Transaction blocked due to fraud detection', 403, 'FRAUD_DETECTED', {
+        riskScore: combinedRiskScore,
+        signals: fraudSignals,
+        detectedPatterns: fraudAnalysis.detectedPatterns
+      });
     }
 
     const transaction = await Transaction.create({
@@ -66,15 +154,23 @@ const sendTransaction = async (req, res) => {
       chainId: network === 'polygon' ? 137 : 1,
       status: 'pending',
       fraudAnalysis: {
-        riskScore: fraudAnalysis.riskScore,
-        isBlocked: fraudAnalysis.isBlocked,
+        riskScore: combinedRiskScore,
+        isBlocked: isBlocked,
         mlModelVersion: fraudAnalysis.mlModelVersion,
-        detectedPatterns: fraudAnalysis.detectedPatterns,
+        detectedPatterns: [
+          ...fraudAnalysis.detectedPatterns,
+          ...Object.entries(fraudSignals)
+            .filter(([key, value]) => key.includes('_risk') && value !== 'low')
+            .map(([key, value]) => `${key}: ${value}`)
+        ],
         analyzedAt: fraudAnalysis.analyzedAt
       },
       biometricVerified: true,
       facialVerified: true,
-      metadata: metadata || {}
+      metadata: {
+        ...metadata,
+        fraudSignals: fraudSignals
+      }
     });
 
     const callData = buildTransferCallData(to, amount, token?.address);
@@ -102,15 +198,16 @@ const sendTransaction = async (req, res) => {
 
     await transaction.markSubmitted(null, sendResult.userOpHash);
 
-    logger.info(`Transaction submitted for user: ${userId}, userOpHash: ${sendResult.userOpHash}`);
+    logger.info(`Transaction submitted for user: ${userId}, userOpHash: ${sendResult.userOpHash}, riskScore: ${combinedRiskScore}`);
 
     return successResponse(res, 'Transaction submitted successfully', {
       transactionId: transaction._id,
       userOpHash: sendResult.userOpHash,
       status: 'submitted',
       fraudAnalysis: {
-        riskScore: fraudAnalysis.riskScore,
-        isBlocked: fraudAnalysis.isBlocked
+        riskScore: combinedRiskScore,
+        isBlocked: isBlocked,
+        signals: fraudSignals
       }
     }, 201);
   } catch (error) {
@@ -276,20 +373,27 @@ const checkFraud = async (req, res) => {
       return errorResponse(res, 'Wallet not found', 404, 'WALLET_NOT_FOUND');
     }
 
+    const fraudSignals = await calculateFraudSignals(userId, wallet.smartAccountAddress, to, amount);
+    const localRiskScore = calculateOverallRiskScore(fraudSignals);
+
     const fraudAnalysis = await analyzeFraud({
       from: wallet.smartAccountAddress,
       to: to,
       amount: amount,
       token: token || { symbol: 'ETH' },
       network: wallet.network,
-      userId: userId.toString()
+      userId: userId.toString(),
+      signals: fraudSignals
     });
 
+    const combinedRiskScore = (localRiskScore + fraudAnalysis.riskScore) / 2;
+
     return successResponse(res, 'Fraud check completed', {
-      riskScore: fraudAnalysis.riskScore,
-      isBlocked: fraudAnalysis.isBlocked,
+      riskScore: combinedRiskScore,
+      isBlocked: combinedRiskScore > 0.7 || fraudAnalysis.isBlocked,
+      signals: fraudSignals,
       detectedPatterns: fraudAnalysis.detectedPatterns,
-      recommendation: fraudAnalysis.recommendation
+      recommendation: combinedRiskScore > 0.7 ? 'block' : fraudAnalysis.recommendation
     });
   } catch (error) {
     logger.error('Check fraud error:', error);
