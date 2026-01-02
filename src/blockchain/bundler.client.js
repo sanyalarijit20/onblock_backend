@@ -2,195 +2,136 @@ const axios = require('axios');
 const logger = require('../utils/logger');
 
 class BundlerClient {
-  constructor(bundlerUrl, apiKey, network = 'polygon') {
-    this.bundlerUrl = bundlerUrl;
-    this.apiKey = apiKey;
-    this.network = network;
-    
+  constructor({ bundlerUrl, apiKey, entryPoint }) {
+    if (!bundlerUrl) throw new Error('bundlerUrl required');
+    if (!entryPoint) throw new Error('entryPoint required');
+
+    this.entryPoint = entryPoint;
     this.client = axios.create({
       baseURL: bundlerUrl,
       timeout: 30000,
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey
+        ...(apiKey ? { 'x-api-key': apiKey } : {})
       }
     });
   }
 
-  async sendUserOperation(userOp, entryPoint) {
-    try {
-      const response = await this.client.post('/', {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'eth_sendUserOperation',
-        params: [userOp, entryPoint]
-      });
+  async rpc(method, params = []) {
+    const payload = {
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method,
+      params
+    };
 
-      if (response.data.error) {
-        throw new Error(response.data.error.message || 'Bundler error');
-      }
+    const res = await this.client.post('/', payload);
+
+    if (!res.data) {
+      throw new Error('Empty bundler response');
+    }
+
+    if (res.data.error) {
+      throw new Error(res.data.error.message || 'Bundler RPC error');
+    }
+
+    return res.data.result;
+  }
+
+  async sendUserOperation(userOp) {
+    try {
+      const hash = await this.rpc('eth_sendUserOperation', [
+        userOp,
+        this.entryPoint
+      ]);
 
       return {
-        userOpHash: response.data.result,
-        network: this.network
+        userOpHash: hash
       };
-    } catch (error) {
-      logger.error('Send UserOperation error:', error.message);
-      throw new Error(`Failed to send user operation: ${error.message}`);
+    } catch (err) {
+      logger.error('sendUserOperation failed:', err.message);
+      throw err;
+    }
+  }
+
+  async estimateUserOperationGas(userOp) {
+    try {
+      return await this.rpc('eth_estimateUserOperationGas', [
+        userOp,
+        this.entryPoint
+      ]);
+    } catch (err) {
+      logger.error('estimateUserOperationGas failed:', err.message);
+      throw err;
     }
   }
 
   async getUserOperationReceipt(userOpHash) {
     try {
-      const response = await this.client.post('/', {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'eth_getUserOperationReceipt',
-        params: [userOpHash]
-      });
-
-      if (response.data.error) {
-        if (response.data.error.message.includes('not found')) {
-          return null;
-        }
-        throw new Error(response.data.error.message || 'Bundler error');
+      return await this.rpc('eth_getUserOperationReceipt', [userOpHash]);
+    } catch (err) {
+      if (err.message.toLowerCase().includes('not found')) {
+        return null;
       }
-
-      return response.data.result;
-    } catch (error) {
-      logger.error('Get UserOperation receipt error:', error.message);
-      throw new Error(`Failed to get user operation receipt: ${error.message}`);
+      logger.error('getUserOperationReceipt failed:', err.message);
+      throw err;
     }
   }
 
   async getUserOperationByHash(userOpHash) {
     try {
-      const response = await this.client.post('/', {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'eth_getUserOperationByHash',
-        params: [userOpHash]
-      });
-
-      if (response.data.error) {
-        throw new Error(response.data.error.message || 'Bundler error');
-      }
-
-      return response.data.result;
-    } catch (error) {
-      logger.error('Get UserOperation by hash error:', error.message);
-      throw new Error(`Failed to get user operation by hash: ${error.message}`);
+      return await this.rpc('eth_getUserOperationByHash', [userOpHash]);
+    } catch (err) {
+      logger.error('getUserOperationByHash failed:', err.message);
+      throw err;
     }
   }
 
-  async estimateUserOperationGas(userOp, entryPoint) {
-    try {
-      const response = await this.client.post('/', {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'eth_estimateUserOperationGas',
-        params: [userOp, entryPoint]
-      });
-
-      if (response.data.error) {
-        throw new Error(response.data.error.message || 'Bundler error');
-      }
-
-      return response.data.result;
-    } catch (error) {
-      logger.error('Estimate UserOperation gas error:', error.message);
-      throw new Error(`Failed to estimate user operation gas: ${error.message}`);
-    }
-  }
-
-  async getSupportedEntryPoints() {
-    try {
-      const response = await this.client.post('/', {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'eth_supportedEntryPoints',
-        params: []
-      });
-
-      if (response.data.error) {
-        throw new Error(response.data.error.message || 'Bundler error');
-      }
-
-      return response.data.result;
-    } catch (error) {
-      logger.error('Get supported entry points error:', error.message);
-      throw new Error(`Failed to get supported entry points: ${error.message}`);
-    }
+  async supportedEntryPoints() {
+    return await this.rpc('eth_supportedEntryPoints');
   }
 
   async chainId() {
-    try {
-      const response = await this.client.post('/', {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'eth_chainId',
-        params: []
-      });
-
-      if (response.data.error) {
-        throw new Error(response.data.error.message || 'Bundler error');
-      }
-
-      return response.data.result;
-    } catch (error) {
-      logger.error('Get chain ID error:', error.message);
-      throw new Error(`Failed to get chain ID: ${error.message}`);
-    }
+    return await this.rpc('eth_chainId');
   }
 
-  async waitForUserOperation(userOpHash, timeout = 60000, interval = 3000) {
-    const startTime = Date.now();
-    
-    while (Date.now() - startTime < timeout) {
-      try {
-        const receipt = await this.getUserOperationReceipt(userOpHash);
-        
-        if (receipt) {
-          return receipt;
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, interval));
-      } catch (error) {
-        logger.error('Wait for UserOperation error:', error.message);
-        await new Promise(resolve => setTimeout(resolve, interval));
-      }
+  async waitForReceipt(userOpHash, { timeoutMs = 120000, pollMs = 3000 } = {}) {
+    const start = Date.now();
+
+    while (Date.now() - start < timeoutMs) {
+      const receipt = await this.getUserOperationReceipt(userOpHash);
+      if (receipt) return receipt;
+      await new Promise(r => setTimeout(r, pollMs));
     }
-    
+
     throw new Error('UserOperation receipt timeout');
   }
 
   async healthCheck() {
     try {
-      const chainId = await this.chainId();
-      const entryPoints = await this.getSupportedEntryPoints();
-      
+      const [chainId, entryPoints] = await Promise.all([
+        this.chainId(),
+        this.supportedEntryPoints()
+      ]);
+
       return {
         healthy: true,
-        chainId: chainId,
-        entryPoints: entryPoints,
-        network: this.network,
+        chainId,
+        entryPoints,
         timestamp: new Date()
       };
-    } catch (error) {
-      logger.error('Bundler health check error:', error.message);
+    } catch (err) {
       return {
         healthy: false,
-        error: error.message,
-        network: this.network,
+        error: err.message,
         timestamp: new Date()
       };
     }
   }
 }
 
-const createBundlerClient = (bundlerUrl, apiKey, network = 'polygon') => {
-  return new BundlerClient(bundlerUrl, apiKey, network);
-};
+const createBundlerClient = ({ bundlerUrl, apiKey, entryPoint }) =>
+  new BundlerClient({ bundlerUrl, apiKey, entryPoint });
 
 module.exports = {
   BundlerClient,
