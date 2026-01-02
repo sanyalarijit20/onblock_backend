@@ -1,5 +1,3 @@
-
-
 const { BLOCKCHAIN_NETWORK, CHAIN_ID, RPC_URL } = require('./env');
 
 const NETWORKS = {

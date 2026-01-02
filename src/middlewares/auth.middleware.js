@@ -1,74 +1,56 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/user.model');
+const Wallet = require('../models/wallet.model');
 const { errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
+const config = require('../config/env');
 
 const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    
-    if (!authHeader) {
-      return errorResponse(res, 'Authorization header missing', 401, 'AUTH_HEADER_MISSING');
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return errorResponse(res, 'Authentication required', 401, 'AUTH_REQUIRED');
     }
 
-    if (!authHeader.startsWith('Bearer ')) {
-      return errorResponse(res, 'Invalid authorization format. Use Bearer token', 401, 'INVALID_AUTH_FORMAT');
-    }
-
-    const token = authHeader.substring(7);
-
-    if (!token || token.trim() === '') {
-      return errorResponse(res, 'Token not provided', 401, 'TOKEN_MISSING');
-    }
+    const token = authHeader.split(' ')[1];
 
     let decoded;
     try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (jwtError) {
-      if (jwtError.name === 'TokenExpiredError') {
-        return errorResponse(res, 'Token has expired', 401, 'TOKEN_EXPIRED');
+      decoded = jwt.verify(token, config.JWT_SECRET);
+    } catch (err) {
+      if (err.name === 'TokenExpiredError') {
+        return errorResponse(res, 'Token expired', 401, 'TOKEN_EXPIRED');
       }
-      if (jwtError.name === 'JsonWebTokenError') {
-        return errorResponse(res, 'Invalid token', 401, 'TOKEN_INVALID');
-      }
-      throw jwtError;
+      return errorResponse(res, 'Invalid token', 401, 'INVALID_TOKEN');
     }
 
     const userId = decoded.userId || decoded.id;
-
     if (!userId) {
-      return errorResponse(res, 'Invalid token payload', 401, 'INVALID_TOKEN_PAYLOAD');
+      return errorResponse(res, 'Invalid token payload', 401, 'INVALID_TOKEN');
     }
 
-    const user = await User.findById(userId).select('-__v');
+    const user = await User.findById(userId);
 
     if (!user) {
       return errorResponse(res, 'User not found', 401, 'USER_NOT_FOUND');
     }
 
     if (!user.isActive) {
-      return errorResponse(res, 'Account is deactivated', 403, 'ACCOUNT_DEACTIVATED');
+      return errorResponse(res, 'Account deactivated', 403, 'ACCOUNT_DEACTIVATED');
     }
 
-    if (user.securityFlags.isBlocked) {
-      return errorResponse(
-        res, 
-        'Account has been blocked due to security concerns. Please contact support.', 
-        403, 
-        'ACCOUNT_BLOCKED'
-      );
+    if (user.changedPasswordAfter && user.changedPasswordAfter(decoded.iat)) {
+      return errorResponse(res, 'Password changed, login again', 401, 'TOKEN_INVALID');
     }
 
     req.user = user;
     req.userId = user._id;
     req.token = token;
 
-    logger.info(`User authenticated: ${user._id}`);
-
     next();
-
   } catch (error) {
-    logger.error('Authentication error:', error);
+    logger.error('Auth middleware error:', error);
     return errorResponse(res, 'Authentication failed', 500, 'AUTH_ERROR');
   }
 };
@@ -79,45 +61,31 @@ const optionalAuth = async (req, res, next) => {
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       req.user = null;
-      req.userId = null;
       return next();
     }
 
-    const token = authHeader.substring(7);
-
-    if (!token || token.trim() === '') {
-      req.user = null;
-      req.userId = null;
-      return next();
-    }
+    const token = authHeader.split(' ')[1];
 
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, config.JWT_SECRET);
       const userId = decoded.userId || decoded.id;
 
       if (userId) {
-        const user = await User.findById(userId).select('-__v');
-        
-        if (user && user.isActive && !user.securityFlags.isBlocked) {
+        const user = await User.findById(userId);
+        if (user && user.isActive) {
           req.user = user;
           req.userId = user._id;
           req.token = token;
-        } else {
-          req.user = null;
-          req.userId = null;
         }
       }
-    } catch (jwtError) {
+    } catch (_) {
       req.user = null;
-      req.userId = null;
     }
 
     next();
-
   } catch (error) {
     logger.error('Optional auth error:', error);
     req.user = null;
-    req.userId = null;
     next();
   }
 };
@@ -127,11 +95,11 @@ const requireBiometric = (req, res, next) => {
     return errorResponse(res, 'Authentication required', 401, 'AUTH_REQUIRED');
   }
 
-  if (!req.user.biometricEnabled) {
+  if (!req.user.biometricData?.isVerified) {
     return errorResponse(
-      res, 
-      'Biometric verification required for this action', 
-      403, 
+      res,
+      'Biometric verification required',
+      403,
       'BIOMETRIC_REQUIRED'
     );
   }
@@ -144,11 +112,11 @@ const requireFacial = (req, res, next) => {
     return errorResponse(res, 'Authentication required', 401, 'AUTH_REQUIRED');
   }
 
-  if (!req.user.facialRecognitionEnabled) {
+  if (!req.user.biometricData?.isVerified) {
     return errorResponse(
-      res, 
-      'Facial recognition required for this action', 
-      403, 
+      res,
+      'Facial verification required',
+      403,
       'FACIAL_REQUIRED'
     );
   }
@@ -156,47 +124,53 @@ const requireFacial = (req, res, next) => {
   next();
 };
 
-const requireFullVerification = (req, res, next) => {
+const requireKYC = (req, res, next) => {
   if (!req.user) {
     return errorResponse(res, 'Authentication required', 401, 'AUTH_REQUIRED');
   }
 
-  if (!req.user.biometricEnabled || !req.user.facialRecognitionEnabled) {
+  if (!req.user.isKYCComplete()) {
     return errorResponse(
-      res, 
-      'Full biometric and facial verification required', 
-      403, 
-      'FULL_VERIFICATION_REQUIRED'
+      res,
+      'KYC verification required',
+      403,
+      'KYC_REQUIRED'
     );
   }
 
   next();
 };
 
-const requireWallet = (req, res, next) => {
+const requireWallet = async (req, res, next) => {
   if (!req.user) {
     return errorResponse(res, 'Authentication required', 401, 'AUTH_REQUIRED');
   }
 
-  if (!req.user.walletId) {
+  const wallet = await Wallet.findPrimaryWallet(
+    req.user._id,
+    config.BLOCKCHAIN_NETWORK
+  );
+
+  if (!wallet) {
     return errorResponse(
-      res, 
-      'Wallet not found. Please create a wallet first.', 
-      400, 
+      res,
+      'Wallet not found. Create wallet first.',
+      400,
       'WALLET_NOT_FOUND'
     );
   }
 
+  req.wallet = wallet;
   next();
 };
 
 const verifySignature = (req, res, next) => {
   const signature = req.headers['x-signature'];
-  
+
   if (!signature) {
-    return errorResponse(res, 'Signature required', 400, 'SIGNATURE_MISSING');
+    return errorResponse(res, 'Signature missing', 400, 'SIGNATURE_REQUIRED');
   }
-  
+
   next();
 };
 
@@ -205,7 +179,7 @@ module.exports = {
   optionalAuth,
   requireBiometric,
   requireFacial,
-  requireFullVerification,
+  requireKYC,
   requireWallet,
   verifySignature
 };
