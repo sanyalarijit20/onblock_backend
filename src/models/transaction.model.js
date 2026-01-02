@@ -1,345 +1,176 @@
 const mongoose = require('mongoose');
 
-const transactionSchema = new mongoose.Schema({
-  
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
-    index: true
-  },
-
-  walletId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Wallet',
-    required: true,
-    index: true
-  },
-
-  type: {
-    type: String,
-    enum: ['send', 'receive', 'swap', 'deposit', 'withdrawal'],
-    required: true
-  },
-
-  amount: {
-    type: String,
-    required: true
-  },
-
-  token: {
-    symbol: {
-      type: String,
+const transactionSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
       required: true,
-      default: 'ETH'
+      index: true
     },
-    address: {
-      type: String, 
-      default: null
-    },
-    decimals: {
-      type: Number,
-      default: 18
-    }
-  },
 
-  from: {
-    type: String,
-    required: true,
-    lowercase: true
-  },
+    walletId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Wallet',
+      required: true,
+      index: true
+    },
 
-  to: {
-    type: String,
-    required: true,
-    lowercase: true
-  },
+    type: {
+      type: String,
+      enum: ['send', 'receive', 'swap', 'deposit', 'withdrawal'],
+      required: true
+    },
 
-  txHash: {
-    type: String,
-    sparse: true, 
-    lowercase: true
-  },
+    amount: {
+      type: String,
+      required: true
+    },
 
-  userOpHash: {
-    type: String, 
-    sparse: true,
-    lowercase: true
-  },
+    token: {
+      symbol: { type: String, required: true, default: 'ETH' },
+      address: { type: String, default: null },
+      decimals: { type: Number, default: 18 }
+    },
 
-  blockNumber: {
-    type: Number,
-    default: null
-  },
+    from: { type: String, required: true, lowercase: true },
+    to: { type: String, required: true, lowercase: true },
 
-  network: {
-    type: String,
-    required: true,
-    default: 'polygon' 
-  },
+    txHash: { type: String, sparse: true, lowercase: true },
+    userOpHash: { type: String, sparse: true, lowercase: true },
 
-  chainId: {
-    type: Number,
-    required: true
-  },
+    blockNumber: { type: Number, default: null },
 
-  status: {
-    type: String,
-    enum: ['pending', 'submitted', 'confirmed', 'failed', 'rejected'],
-    default: 'pending',
-    index: true
-  },
+    network: { type: String, required: true, default: 'polygon' },
+    chainId: { type: Number, required: true },
 
-  gas: {
-    gasLimit: String,
-    gasPrice: String,
-    maxFeePerGas: String,
-    maxPriorityFeePerGas: String,
-    actualGasUsed: String,
-    sponsoredBy: {
+    status: {
       type: String,
-      default: 'biconomy' 
-    }
-  },
+      enum: ['pending', 'submitted', 'confirmed', 'failed', 'rejected'],
+      default: 'pending',
+      index: true
+    },
 
-  deviceInfo: {
-    deviceId: {
-      type: String,
-      default: null
+    gas: {
+      gasLimit: String,
+      gasPrice: String,
+      maxFeePerGas: String,
+      maxPriorityFeePerGas: String,
+      actualGasUsed: String,
+      sponsoredBy: { type: String, default: 'biconomy' }
     },
-    deviceType: {
-      type: String,
-      enum: ['mobile', 'tablet', 'desktop', 'unknown'],
-      default: 'unknown'
-    },
-    osName: {
-      type: String,
-      default: null
-    },
-    osVersion: {
-      type: String,
-      default: null
-    },
-    browserName: {
-      type: String,
-      default: null
-    },
-    browserVersion: {
-      type: String,
-      default: null
-    },
-    deviceFingerprint: {
-      type: String,
-      default: null
-    },
-    ipAddress: {
-      type: String,
-      default: null
-    },
-    location: {
-      country: String,
-      state: String,
-      city: String,
-      coordinates: {
-        latitude: Number,
-        longitude: Number
-      }
-    },
-    isNewDevice: {
-      type: Boolean,
-      default: false
-    },
-    deviceChanged: {
-      type: Boolean,
-      default: false
-    },
-    lastKnownDeviceId: {
-      type: String,
-      default: null
-    },
-    deviceTrustScore: {
-      type: Number,
-      min: 0,
-      max: 1,
-      default: 1
-    }
-  },
 
-  fraudAnalysis: {
-    riskScore: {
-      type: Number,
-      min: 0,
-      max: 1,
-      default: null 
-    },
-    isBlocked: {
-      type: Boolean,
-      default: false
-    },
-    mlModelVersion: {
-      type: String,
-      default: null
-    },
-    detectedPatterns: [{
-      type: String 
-    }],
-    
-    signals: {
-      amountAnomaly: {
-        detected: { type: Boolean, default: false },
-        amountRatio: { type: Number, default: 0 },
-        userAvgAmount: { type: String, default: '0' },
-        riskLevel: { 
-          type: String, 
-          enum: ['low', 'medium', 'high', 'none'],
-          default: 'none'
+    deviceInfo: {
+      deviceId: { type: String, default: null },
+      deviceType: {
+        type: String,
+        enum: ['mobile', 'tablet', 'desktop', 'unknown'],
+        default: 'unknown'
+      },
+      osName: String,
+      osVersion: String,
+      browserName: String,
+      browserVersion: String,
+      deviceFingerprint: String,
+      ipAddress: String,
+      location: {
+        country: String,
+        state: String,
+        city: String,
+        coordinates: {
+          latitude: Number,
+          longitude: Number
         }
       },
-      
-      transactionFrequency: {
-        detected: { type: Boolean, default: false },
-        txCountLast10Min: { type: Number, default: 0 },
-        riskLevel: { 
-          type: String, 
-          enum: ['low', 'medium', 'high', 'none'],
-          default: 'none'
-        }
-      },
-      
-      timeGap: {
-        detected: { type: Boolean, default: false },
-        secondsSinceLastTx: { type: Number, default: null },
-        riskLevel: { 
-          type: String, 
-          enum: ['low', 'medium', 'high', 'none'],
-          default: 'none'
-        }
-      },
-      
-      deviceChange: {
-        detected: { type: Boolean, default: false },
-        currentDeviceId: { type: String, default: null },
-        lastDeviceId: { type: String, default: null },
-        riskLevel: { 
-          type: String, 
-          enum: ['low', 'medium', 'high', 'none'],
-          default: 'none'
-        }
-      },
-      
-      nightTimeTransaction: {
-        detected: { type: Boolean, default: false },
-        transactionHour: { type: Number, default: null },
-        isNightTime: { type: Boolean, default: false },
-        riskLevel: { 
-          type: String, 
-          enum: ['low', 'medium', 'high', 'none'],
-          default: 'none'
-        }
-      },
-      
-      newReceiverAddress: {
-        detected: { type: Boolean, default: false },
-        receiverAddress: { type: String, default: null },
-        isNewReceiver: { type: Boolean, default: false },
-        riskLevel: { 
-          type: String, 
-          enum: ['low', 'medium', 'high', 'none'],
-          default: 'none'
-        }
-      }
+      isNewDevice: { type: Boolean, default: false },
+      deviceChanged: { type: Boolean, default: false },
+      lastKnownDeviceId: { type: String, default: null },
+      deviceTrustScore: { type: Number, min: 0, max: 1, default: 1 }
     },
-    
-    riskFactors: {
-      deviceChange: {
-        type: Boolean,
-        default: false
+
+    fraudAnalysis: {
+      riskScore: { type: Number, min: 0, max: 1, default: null },
+      isBlocked: { type: Boolean, default: false },
+      mlModelVersion: { type: String, default: null },
+      detectedPatterns: [{ type: String }],
+
+      signals: {
+        amountAnomaly: {
+          detected: Boolean,
+          amountRatio: Number,
+          userAvgAmount: String,
+          riskLevel: String
+        },
+        transactionFrequency: {
+          detected: Boolean,
+          txCountLast10Min: Number,
+          riskLevel: String
+        },
+        timeGap: {
+          detected: Boolean,
+          secondsSinceLastTx: Number,
+          riskLevel: String
+        },
+        deviceChange: {
+          detected: Boolean,
+          currentDeviceId: String,
+          lastDeviceId: String,
+          riskLevel: String
+        },
+        nightTimeTransaction: {
+          detected: Boolean,
+          transactionHour: Number,
+          isNightTime: Boolean,
+          riskLevel: String
+        },
+        newReceiverAddress: {
+          detected: Boolean,
+          receiverAddress: String,
+          isNewReceiver: Boolean,
+          riskLevel: String
+        }
       },
-      newDevice: {
-        type: Boolean,
-        default: false
+
+      riskFactors: {
+        deviceChange: Boolean,
+        newDevice: Boolean,
+        locationChange: Boolean,
+        unusualAmount: Boolean,
+        unusualTime: Boolean,
+        highFrequency: Boolean,
+        newReceiver: Boolean,
+        rapidTransactions: Boolean
       },
-      locationChange: {
-        type: Boolean,
-        default: false
-      },
-      unusualAmount: {
-        type: Boolean,
-        default: false
-      },
-      unusualTime: {
-        type: Boolean,
-        default: false
-      },
-      highFrequency: {
-        type: Boolean,
-        default: false
-      },
-      newReceiver: {
-        type: Boolean,
-        default: false
-      },
-      rapidTransactions: {
-        type: Boolean,
-        default: false
-      }
+
+      analyzedAt: Date
     },
-    
-    analyzedAt: {
-      type: Date,
-      default: null
-    }
-  },
 
-  biometricVerified: {
-    type: Boolean,
-    default: false
-  },
+    biometricVerified: { type: Boolean, default: false },
+    facialVerified: { type: Boolean, default: false },
 
-  facialVerified: {
-    type: Boolean,
-    default: false
-  },
+    metadata: {
+      description: String,
+      category: String,
+      notes: String,
+      transactionHour: Number,
+      transactionDay: String,
+      isRecurring: Boolean
+    },
 
-  metadata: {
-    description: String,
-    category: String, 
-    notes: String,
-    transactionHour: Number,
-    transactionDay: String,
-    isRecurring: Boolean
-  },
+    errorMessage: String,
+    errorCode: String,
 
-  errorMessage: {
-    type: String,
-    default: null
+    initiatedAt: { type: Date, default: Date.now },
+    submittedAt: Date,
+    confirmedAt: Date
   },
-
-  errorCode: {
-    type: String,
-    default: null
-  },
-
-  initiatedAt: {
-    type: Date,
-    default: Date.now
-  },
-
-  submittedAt: {
-    type: Date,
-    default: null
-  },
-
-  confirmedAt: {
-    type: Date,
-    default: null
+  {
+    timestamps: true,
+    collection: 'transactions'
   }
+);
 
-}, {
-  timestamps: true, 
-  collection: 'transactions'
-});
-
+/* INDEXES */
 transactionSchema.index({ userId: 1, createdAt: -1 });
 transactionSchema.index({ walletId: 1, status: 1 });
 transactionSchema.index({ txHash: 1 });
@@ -347,13 +178,10 @@ transactionSchema.index({ userOpHash: 1 });
 transactionSchema.index({ 'fraudAnalysis.riskScore': 1, status: 1 });
 transactionSchema.index({ 'deviceInfo.deviceId': 1 });
 transactionSchema.index({ 'deviceInfo.ipAddress': 1 });
-transactionSchema.index({ 'deviceInfo.deviceChanged': 1, status: 1 });
 transactionSchema.index({ to: 1, userId: 1 });
-transactionSchema.index({ userId: 1, initiatedAt: -1 });
-transactionSchema.index({ 'fraudAnalysis.signals.amountAnomaly.riskLevel': 1 });
-transactionSchema.index({ 'fraudAnalysis.signals.transactionFrequency.riskLevel': 1 });
 
-transactionSchema.methods.markSubmitted = function(txHash, userOpHash) {
+/* INSTANCE HELPERS — NO DECISIONS */
+transactionSchema.methods.markSubmitted = function (txHash, userOpHash) {
   this.status = 'submitted';
   this.txHash = txHash;
   this.userOpHash = userOpHash;
@@ -361,75 +189,44 @@ transactionSchema.methods.markSubmitted = function(txHash, userOpHash) {
   return this.save();
 };
 
-transactionSchema.methods.markConfirmed = function(blockNumber, actualGasUsed) {
+transactionSchema.methods.markConfirmed = function (blockNumber, actualGasUsed) {
   this.status = 'confirmed';
   this.blockNumber = blockNumber;
   this.confirmedAt = new Date();
-  if (actualGasUsed) {
-    this.gas.actualGasUsed = actualGasUsed;
-  }
+  if (actualGasUsed) this.gas.actualGasUsed = actualGasUsed;
   return this.save();
 };
 
-transactionSchema.methods.markFailed = function(errorMessage, errorCode) {
+transactionSchema.methods.markFailed = function (errorMessage, errorCode) {
   this.status = 'failed';
   this.errorMessage = errorMessage;
   this.errorCode = errorCode;
   return this.save();
 };
 
-transactionSchema.methods.isHighRisk = function() {
-  return this.fraudAnalysis.riskScore !== null && 
-         this.fraudAnalysis.riskScore > 0.7;
+transactionSchema.methods.isHighRisk = function () {
+  return Boolean(this.fraudAnalysis?.isBlocked);
 };
 
-transactionSchema.methods.hasDeviceChanged = function() {
-  return this.deviceInfo.deviceChanged === true;
+transactionSchema.methods.hasDeviceChanged = function () {
+  return Boolean(this.deviceInfo?.deviceChanged);
 };
 
-transactionSchema.methods.isFromNewDevice = function() {
-  return this.deviceInfo.isNewDevice === true;
+transactionSchema.methods.isFromNewDevice = function () {
+  return Boolean(this.deviceInfo?.isNewDevice);
 };
 
-transactionSchema.methods.requiresAdditionalVerification = function() {
-  return this.isHighRisk() || 
-         this.hasDeviceChanged() || 
-         this.isFromNewDevice() ||
-         this.fraudAnalysis.signals.amountAnomaly.riskLevel === 'high' ||
-         this.fraudAnalysis.signals.transactionFrequency.riskLevel === 'high' ||
-         this.fraudAnalysis.signals.timeGap.riskLevel === 'high' ||
-         parseFloat(this.amount) > 10000;
+transactionSchema.methods.requiresAdditionalVerification = function () {
+  return Boolean(this.fraudAnalysis?.isBlocked);
 };
 
-transactionSchema.methods.getHighRiskSignals = function() {
-  const highRiskSignals = [];
-  
-  if (this.fraudAnalysis.signals.amountAnomaly.riskLevel === 'high') {
-    highRiskSignals.push('Amount Anomaly');
-  }
-  if (this.fraudAnalysis.signals.transactionFrequency.riskLevel === 'high') {
-    highRiskSignals.push('High Transaction Frequency');
-  }
-  if (this.fraudAnalysis.signals.timeGap.riskLevel === 'high') {
-    highRiskSignals.push('Rapid Transactions');
-  }
-  if (this.fraudAnalysis.signals.deviceChange.riskLevel === 'medium' || 
-      this.fraudAnalysis.signals.deviceChange.riskLevel === 'high') {
-    highRiskSignals.push('Device Change');
-  }
-  if (this.fraudAnalysis.signals.nightTimeTransaction.riskLevel === 'medium' || 
-      this.fraudAnalysis.signals.nightTimeTransaction.riskLevel === 'high') {
-    highRiskSignals.push('Night-Time Transaction');
-  }
-  if (this.fraudAnalysis.signals.newReceiverAddress.riskLevel === 'medium' || 
-      this.fraudAnalysis.signals.newReceiverAddress.riskLevel === 'high') {
-    highRiskSignals.push('New Receiver Address');
-  }
-  
-  return highRiskSignals;
+transactionSchema.methods.getHighRiskSignals = function () {
+  return Object.entries(this.fraudAnalysis?.signals || {})
+    .filter(([, v]) => v?.riskLevel === 'high' || v?.riskLevel === 'medium')
+    .map(([k]) => k);
 };
 
-transactionSchema.methods.toClientJSON = function() {
+transactionSchema.methods.toClientJSON = function () {
   return {
     id: this._id,
     type: this.type,
@@ -451,9 +248,7 @@ transactionSchema.methods.toClientJSON = function() {
     fraudAnalysis: {
       riskScore: this.fraudAnalysis.riskScore,
       isBlocked: this.fraudAnalysis.isBlocked,
-      signals: this.fraudAnalysis.signals,
-      riskFactors: this.fraudAnalysis.riskFactors,
-      highRiskSignals: this.getHighRiskSignals()
+      signals: this.fraudAnalysis.signals
     },
     verified: {
       biometric: this.biometricVerified,
@@ -466,70 +261,21 @@ transactionSchema.methods.toClientJSON = function() {
   };
 };
 
-transactionSchema.statics.getUserTransactions = async function(userId, page = 1, limit = 20) {
-  const skip = (page - 1) * limit;
-  
-  const transactions = await this.find({ userId })
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limit)
-    .populate('walletId', 'address')
-    .lean();
-
-  const total = await this.countDocuments({ userId });
-
-  return {
-    transactions,
-    pagination: {
-      page,
-      limit,
-      total,
-      pages: Math.ceil(total / limit)
-    }
-  };
-};
-
-transactionSchema.statics.getPendingTransactions = function(userId) {
-  return this.find({ 
-    userId, 
-    status: { $in: ['pending', 'submitted'] }
-  }).sort({ createdAt: -1 });
-};
-
-transactionSchema.statics.getHighRiskTransactions = function(limit = 50) {
-  return this.find({
-    'fraudAnalysis.riskScore': { $gt: 0.7 },
-    status: { $in: ['pending', 'submitted'] }
-  })
-  .sort({ 'fraudAnalysis.riskScore': -1 })
-  .limit(limit)
-  .populate('userId', 'email phoneNumber');
-};
-
-transactionSchema.statics.getDeviceChangedTransactions = function(userId, limit = 20) {
-  return this.find({
-    userId,
-    'deviceInfo.deviceChanged': true,
-    status: { $in: ['pending', 'submitted'] }
-  })
-  .sort({ createdAt: -1 })
-  .limit(limit);
-};
-
-transactionSchema.statics.getLastUserDevice = async function(userId) {
-  const lastTransaction = await this.findOne({
+/* STATICS — DATA ACCESS ONLY */
+transactionSchema.statics.getLastUserDevice = async function (userId) {
+  const tx = await this.findOne({
     userId,
     status: 'confirmed',
     'deviceInfo.deviceId': { $exists: true, $ne: null }
   })
-  .sort({ confirmedAt: -1 })
-  .select('deviceInfo')
-  .lean();
+    .sort({ confirmedAt: -1 })
+    .select('deviceInfo')
+    .lean();
 
-  return lastTransaction ? lastTransaction.deviceInfo : null;
+  return tx ? tx.deviceInfo : null;
 };
 
-transactionSchema.statics.getUserAverageAmount = async function(userId) {
+transactionSchema.statics.getUserAverageAmount = async function (userId) {
   const result = await this.aggregate([
     {
       $match: {
@@ -541,71 +287,61 @@ transactionSchema.statics.getUserAverageAmount = async function(userId) {
     {
       $group: {
         _id: null,
-        avgAmount: { $avg: { $toDouble: '$amount' } },
-        count: { $sum: 1 }
+        avgAmount: { $avg: { $toDouble: '$amount' } }
       }
     }
   ]);
 
-  if (result.length > 0 && result[0].count > 0) {
-    return result[0].avgAmount.toString();
-  }
-  return '0';
+  return result.length ? String(result[0].avgAmount) : '0';
 };
 
-transactionSchema.statics.getTransactionCountLast10Min = async function(userId) {
-  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-  
-  const count = await this.countDocuments({
+transactionSchema.statics.getTransactionCountLast10Min = async function (userId) {
+  return this.countDocuments({
     userId,
-    initiatedAt: { $gte: tenMinutesAgo }
+    initiatedAt: { $gte: new Date(Date.now() - 10 * 60 * 1000) }
   });
-
-  return count;
 };
 
-transactionSchema.statics.getLastTransactionTime = async function(userId) {
-  const lastTx = await this.findOne({
-    userId,
-    status: { $ne: 'failed' }
-  })
-  .sort({ initiatedAt: -1 })
-  .select('initiatedAt')
-  .lean();
-
-  return lastTx ? lastTx.initiatedAt : null;
+transactionSchema.statics.getLastTransactionTime = async function (userId) {
+  const tx = await this.findOne({ userId })
+    .sort({ initiatedAt: -1 })
+    .select('initiatedAt')
+    .lean();
+  return tx ? tx.initiatedAt : null;
 };
 
-transactionSchema.statics.hasReceiverBeenUsedBefore = async function(userId, receiverAddress) {
+transactionSchema.statics.hasReceiverBeenUsedBefore = async function (
+  userId,
+  receiver
+) {
   const count = await this.countDocuments({
     userId,
-    to: receiverAddress.toLowerCase(),
+    to: receiver.toLowerCase(),
     status: 'confirmed'
   });
-
   return count > 0;
 };
 
-transactionSchema.statics.isNightTimeTransaction = function(date = new Date()) {
+transactionSchema.statics.isNightTimeTransaction = function (date = new Date()) {
   const hour = date.getHours();
   return hour >= 0 && hour < 5;
 };
 
-transactionSchema.pre('save', function(next) {
+transactionSchema.pre('save', function (next) {
   if (this.from) this.from = this.from.toLowerCase();
   if (this.to) this.to = this.to.toLowerCase();
   if (this.txHash) this.txHash = this.txHash.toLowerCase();
   if (this.userOpHash) this.userOpHash = this.userOpHash.toLowerCase();
-  
+
   if (this.isNew || this.isModified('initiatedAt')) {
-    const date = this.initiatedAt || new Date();
-    this.metadata.transactionHour = date.getHours();
-    this.metadata.transactionDay = date.toLocaleDateString('en-US', { weekday: 'long' });
+    const d = this.initiatedAt || new Date();
+    this.metadata.transactionHour = d.getHours();
+    this.metadata.transactionDay = d.toLocaleDateString('en-US', {
+      weekday: 'long'
+    });
   }
-  
+
   next();
 });
 
-const Transaction = mongoose.model('Transaction', transactionSchema);
-
-module.exports = Transaction;
+module.exports = mongoose.model('Transaction', transactionSchema);
