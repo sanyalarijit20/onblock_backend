@@ -25,10 +25,11 @@ const sendTransaction = async (req, res) => {
   try {
     const { to, amount, token, network, biometricData, facialData, metadata } =
       req.body;
+
     const userId = req.userId;
     const user = req.user;
 
-    if (!user.walletId) {
+    if (!user || !user.walletId) {
       return errorResponse(res, 'Wallet not found', 404, 'WALLET_NOT_FOUND');
     }
 
@@ -37,22 +38,39 @@ const sendTransaction = async (req, res) => {
       return errorResponse(res, 'Wallet not found', 404, 'WALLET_NOT_FOUND');
     }
 
+    /* =========================
+       BIOMETRIC (MANDATORY)
+    ========================= */
     const biometricResult = await verifyBiometric(
       biometricData,
       userId.toString()
     );
-    if (!biometricResult.verified) {
-      return errorResponse(res, 'Biometric verification failed', 401, 'BIOMETRIC_FAILED');
+
+    if (!biometricResult || biometricResult.verified !== true) {
+      return errorResponse(
+        res,
+        'Biometric verification failed',
+        401,
+        'BIOMETRIC_FAILED'
+      );
     }
 
-    const facialResult = await verifyFacial(
-      facialData,
-      userId.toString()
-    );
-    if (!facialResult.verified) {
-      return errorResponse(res, 'Facial verification failed', 401, 'FACIAL_FAILED');
+    /* =========================
+       FACIAL (OPTIONAL)
+    ========================= */
+    let facialVerified = false;
+
+    if (facialData) {
+      const facialResult = await verifyFacial(
+        facialData,
+        userId.toString()
+      );
+      facialVerified = facialResult?.verified === true;
     }
 
+    /* =========================
+       FRAUD ANALYSIS (NON-BLOCKING)
+    ========================= */
     const fraudAnalysis = await analyzeFraud({
       from: wallet.smartAccountAddress,
       to,
@@ -64,16 +82,14 @@ const sendTransaction = async (req, res) => {
       metadata: metadata || {}
     });
 
-    if (fraudAnalysis.isBlocked) {
-      return errorResponse(
-        res,
-        'Transaction blocked due to fraud detection',
-        403,
-        'FRAUD_DETECTED',
-        fraudAnalysis
-      );
-    }
+    // 🚨 FLAG ONLY — DO NOT BLOCK
+    const isFlagged =
+      typeof fraudAnalysis?.riskScore === 'number' &&
+      fraudAnalysis.riskScore >= 0.7;
 
+    /* =========================
+       CREATE TRANSACTION
+    ========================= */
     const transaction = await Transaction.create({
       userId,
       walletId: wallet._id,
@@ -84,10 +100,22 @@ const sendTransaction = async (req, res) => {
       to,
       network: network || wallet.network,
       status: 'pending',
-      fraudAnalysis
+      fraudAnalysis: {
+        ...fraudAnalysis,
+        flagged: isFlagged
+      },
+      biometricVerified: true,
+      facialVerified
     });
 
-    const callData = buildTransferCallData(to, amount, token?.address);
+    /* =========================
+       BUILD USER OP
+    ========================= */
+    const callData = buildTransferCallData(
+      to,
+      amount,
+      token?.address
+    );
 
     const nonceData = await getSmartAccountNonce(
       wallet.smartAccountAddress,
@@ -95,20 +123,22 @@ const sendTransaction = async (req, res) => {
     );
 
     const builder = createUserOpBuilder(network || wallet.network);
+
     builder
       .setSender(wallet.smartAccountAddress)
       .setNonce(nonceData.nonce)
       .setCallData(callData);
 
     await builder.setGasFees();
-    let userOp = builder.build();
 
-    const sponsored = await sponsorUserOperation(
+    const userOp = builder.build();
+
+    const sponsoredOp = await sponsorUserOperation(
       userOp,
       network || wallet.network
     );
 
-    Object.assign(userOp, sponsored);
+    Object.assign(userOp, sponsoredOp);
 
     const sendResult = await sendUserOperation(
       userOp,
@@ -117,11 +147,19 @@ const sendTransaction = async (req, res) => {
 
     await transaction.markSubmitted(null, sendResult.userOpHash);
 
-    return successResponse(res, 'Transaction submitted successfully', {
-      transactionId: transaction._id,
-      userOpHash: sendResult.userOpHash,
-      status: 'submitted'
-    }, 201);
+    return successResponse(
+      res,
+      isFlagged
+        ? 'Transaction submitted (FLAGGED for review)'
+        : 'Transaction submitted successfully',
+      {
+        transactionId: transaction._id,
+        userOpHash: sendResult.userOpHash,
+        status: 'submitted',
+        flagged: isFlagged
+      },
+      201
+    );
   } catch (error) {
     logger.error('Send transaction error:', error);
     return errorResponse(res, 'Transaction failed', 500, 'TRANSACTION_ERROR');
@@ -137,7 +175,7 @@ const swapTokens = async (req, res) => {
 };
 
 /* =======================
-   FRAUD CHECK (NEW)
+   FRAUD CHECK
 ======================= */
 
 const checkFraud = async (req, res) => {
@@ -145,7 +183,7 @@ const checkFraud = async (req, res) => {
     const { to, amount, token, network, metadata } = req.body;
     const user = req.user;
 
-    if (!user.walletId) {
+    if (!user || !user.walletId) {
       return errorResponse(res, 'Wallet not found', 404, 'WALLET_NOT_FOUND');
     }
 
@@ -178,11 +216,13 @@ const checkFraud = async (req, res) => {
 
 const getTransactions = async (req, res) => {
   const { page = 1, limit = 20 } = req.query;
+
   const result = await Transaction.getUserTransactions(
     req.userId,
     Number(page),
     Number(limit)
   );
+
   return successResponse(res, 'Transactions retrieved successfully', result);
 };
 
@@ -215,10 +255,15 @@ const cancelTransaction = async (req, res) => {
 
 const estimateGas = async (req, res) => {
   const wallet = await Wallet.findById(req.user.walletId);
+
   const gas = await blockchainService.estimateGas(
-    { from: wallet.smartAccountAddress, to: req.body.to },
+    {
+      from: wallet.smartAccountAddress,
+      to: req.body.to
+    },
     wallet.network
   );
+
   return successResponse(res, 'Gas estimated successfully', gas);
 };
 
@@ -240,7 +285,10 @@ const getTransactionStatus = async (req, res) => {
   if (tx.userOpHash && tx.status === 'submitted') {
     const receipt = await getUserOpReceipt(tx.userOpHash, tx.network);
     if (receipt) {
-      await tx.markConfirmed(receipt.blockNumber, receipt.actualGasUsed);
+      await tx.markConfirmed(
+        receipt.blockNumber,
+        receipt.actualGasUsed
+      );
     }
   }
 
@@ -255,7 +303,7 @@ const retryTransaction = async (req, res) => {
 };
 
 /* =======================
-   EXPORTS (MATCH ROUTES)
+   EXPORTS
 ======================= */
 
 module.exports = {
