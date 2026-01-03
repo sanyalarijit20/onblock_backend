@@ -1,12 +1,17 @@
 const User = require('../models/user.model');
 const Wallet = require('../models/wallet.model');
 const { successResponse, errorResponse } = require('../utils/response');
-const blockchainService = require('../services/blockchain.service');
+const {
+  getBalance: getChainBalance,
+  getTokenBalance
+} = require('../services/blockchain.service');
 const { createSmartAccount } = require('../services/biconomy.service');
 const logger = require('../utils/logger');
 const { ethers } = require('ethers');
 
-
+/* =======================
+   Helpers
+======================= */
 
 const loadUserWallet = async (user) => {
   if (!user.walletId) {
@@ -31,7 +36,9 @@ const handleError = (res, error, fallbackMessage, fallbackCode) => {
   );
 };
 
-
+/* =======================
+   Profile
+======================= */
 
 const getProfile = async (req, res) => {
   try {
@@ -72,7 +79,9 @@ const updateProfile = async (req, res) => {
   }
 };
 
-
+/* =======================
+   Wallet
+======================= */
 
 const getWallet = async (req, res) => {
   try {
@@ -123,15 +132,18 @@ const createWallet = async (req, res) => {
   }
 };
 
+/* =======================
+   Balances
+======================= */
 
-
-const getNativeBalance = async (req, res) => {
+const getBalance = async (req, res) => {
   try {
     const wallet = await loadUserWallet(req.user);
-    const balance = await blockchainService.getBalance(
+    const balance = await getChainBalance(
       wallet.smartAccountAddress,
       wallet.network
     );
+
     return successResponse(res, 'Balance retrieved successfully', balance);
   } catch (e) {
     return handleError(res, e, 'Failed to retrieve balance', 'GET_BALANCE_ERROR');
@@ -145,7 +157,7 @@ const getTokenBalances = async (req, res) => {
 
     const results = await Promise.allSettled(
       tokens.map(t =>
-        blockchainService.getTokenBalance(wallet.smartAccountAddress, t, wallet.network)
+        getTokenBalance(wallet.smartAccountAddress, t, wallet.network)
       )
     );
 
@@ -159,13 +171,57 @@ const getTokenBalances = async (req, res) => {
   }
 };
 
+/* =======================
+   Stubs (unchanged behavior)
+======================= */
 
+const backupWallet = async (req, res) =>
+  successResponse(res, 'Wallet backup data retrieved', {
+    backupTimestamp: new Date()
+  });
+
+const getSecuritySettings = async (req, res) =>
+  successResponse(res, 'Security settings retrieved', req.user.securityFlags || {});
+
+const updateSecuritySettings = async (req, res) =>
+  successResponse(res, 'Security settings updated successfully');
+
+const getActivityLog = async (req, res) =>
+  successResponse(res, 'Activity log retrieved', { activities: [] });
+
+const getNotifications = async (req, res) =>
+  successResponse(res, 'Notifications retrieved', { notifications: [] });
+
+const markNotificationAsRead = async (req, res) =>
+  successResponse(res, 'Notification marked as read');
+
+const deleteNotification = async (req, res) =>
+  successResponse(res, 'Notification deleted');
+
+const getSettings = async (req, res) =>
+  successResponse(res, 'Settings retrieved', {});
+
+const updateSettings = async (req, res) =>
+  successResponse(res, 'Settings updated successfully');
+
+/* =======================
+   Exports
+======================= */
 
 module.exports = {
   getProfile,
   updateProfile,
   getWallet,
   createWallet,
-  getNativeBalance,
-  getTokenBalances
+  getBalance,
+  getTokenBalances,
+  backupWallet,
+  getSecuritySettings,
+  updateSecuritySettings,
+  getActivityLog,
+  getNotifications,
+  markNotificationAsRead,
+  deleteNotification,
+  getSettings,
+  updateSettings
 };
