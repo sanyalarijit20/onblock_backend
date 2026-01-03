@@ -17,15 +17,10 @@ const { createUserOpBuilder } = require('../blockchain/userop.builder');
 const blockchainService = require('../services/blockchain.service');
 const logger = require('../utils/logger');
 
-/**
- * SEND TRANSACTION
- * Controller responsibilities ONLY:
- * - auth (already done by middleware)
- * - biometric + facial verification
- * - collect raw inputs
- * - call analyzeFraud()
- * - act on result
- */
+/* =======================
+   SEND TRANSACTION
+======================= */
+
 const sendTransaction = async (req, res) => {
   try {
     const { to, amount, token, network, biometricData, facialData, metadata } =
@@ -47,12 +42,7 @@ const sendTransaction = async (req, res) => {
       userId.toString()
     );
     if (!biometricResult.verified) {
-      return errorResponse(
-        res,
-        'Biometric verification failed',
-        401,
-        'BIOMETRIC_FAILED'
-      );
+      return errorResponse(res, 'Biometric verification failed', 401, 'BIOMETRIC_FAILED');
     }
 
     const facialResult = await verifyFacial(
@@ -60,12 +50,7 @@ const sendTransaction = async (req, res) => {
       userId.toString()
     );
     if (!facialResult.verified) {
-      return errorResponse(
-        res,
-        'Facial verification failed',
-        401,
-        'FACIAL_FAILED'
-      );
+      return errorResponse(res, 'Facial verification failed', 401, 'FACIAL_FAILED');
     }
 
     const fraudAnalysis = await analyzeFraud({
@@ -85,11 +70,7 @@ const sendTransaction = async (req, res) => {
         'Transaction blocked due to fraud detection',
         403,
         'FRAUD_DETECTED',
-        {
-          riskScore: fraudAnalysis.riskScore,
-          signals: fraudAnalysis.signals,
-          detectedPatterns: fraudAnalysis.detectedPatterns
-        }
+        fraudAnalysis
       );
     }
 
@@ -102,54 +83,32 @@ const sendTransaction = async (req, res) => {
       from: wallet.smartAccountAddress,
       to,
       network: network || wallet.network,
-      chainId: network === 'polygon' ? 137 : 1,
       status: 'pending',
-      fraudAnalysis: {
-        riskScore: fraudAnalysis.riskScore,
-        isBlocked: fraudAnalysis.isBlocked,
-        mlModelVersion: fraudAnalysis.mlModelVersion,
-        detectedPatterns: fraudAnalysis.detectedPatterns,
-        signals: fraudAnalysis.signals,
-        analyzedAt: fraudAnalysis.analyzedAt
-      },
-      biometricVerified: true,
-      facialVerified: true,
-      metadata: metadata || {}
+      fraudAnalysis
     });
 
-    const callData = buildTransferCallData(
-      to,
-      amount,
-      token?.address
-    );
+    const callData = buildTransferCallData(to, amount, token?.address);
 
     const nonceData = await getSmartAccountNonce(
       wallet.smartAccountAddress,
       network || wallet.network
     );
 
-    const userOpBuilder = createUserOpBuilder(
-      network || wallet.network
-    );
-
-    userOpBuilder
+    const builder = createUserOpBuilder(network || wallet.network);
+    builder
       .setSender(wallet.smartAccountAddress)
       .setNonce(nonceData.nonce)
       .setCallData(callData);
 
-    await userOpBuilder.setGasFees();
-
-    let userOp = userOpBuilder.build();
+    await builder.setGasFees();
+    let userOp = builder.build();
 
     const sponsored = await sponsorUserOperation(
       userOp,
       network || wallet.network
     );
 
-    userOp.paymasterAndData = sponsored.paymasterAndData;
-    userOp.preVerificationGas = sponsored.preVerificationGas;
-    userOp.verificationGasLimit = sponsored.verificationGasLimit;
-    userOp.callGasLimit = sponsored.callGasLimit;
+    Object.assign(userOp, sponsored);
 
     const sendResult = await sendUserOperation(
       userOp,
@@ -158,41 +117,32 @@ const sendTransaction = async (req, res) => {
 
     await transaction.markSubmitted(null, sendResult.userOpHash);
 
-    logger.info(
-      `Transaction submitted user=${userId} userOpHash=${sendResult.userOpHash} riskScore=${fraudAnalysis.riskScore}`
-    );
-
-    return successResponse(
-      res,
-      'Transaction submitted successfully',
-      {
-        transactionId: transaction._id,
-        userOpHash: sendResult.userOpHash,
-        status: 'submitted',
-        fraudAnalysis: {
-          riskScore: fraudAnalysis.riskScore,
-          isBlocked: fraudAnalysis.isBlocked,
-          signals: fraudAnalysis.signals
-        }
-      },
-      201
-    );
+    return successResponse(res, 'Transaction submitted successfully', {
+      transactionId: transaction._id,
+      userOpHash: sendResult.userOpHash,
+      status: 'submitted'
+    }, 201);
   } catch (error) {
     logger.error('Send transaction error:', error);
-    return errorResponse(
-      res,
-      'Transaction failed',
-      500,
-      'TRANSACTION_ERROR'
-    );
+    return errorResponse(res, 'Transaction failed', 500, 'TRANSACTION_ERROR');
   }
 };
 
+/* =======================
+   SWAP (STUB)
+======================= */
+
 const swapTokens = async (req, res) => {
+  return successResponse(res, 'Swap functionality coming soon');
+};
+
+/* =======================
+   FRAUD CHECK (NEW)
+======================= */
+
+const checkFraud = async (req, res) => {
   try {
-    const { fromToken, toToken, amount, slippage, biometricData, facialData } =
-      req.body;
-    const userId = req.userId;
+    const { to, amount, token, network, metadata } = req.body;
     const user = req.user;
 
     if (!user.walletId) {
@@ -204,305 +154,114 @@ const swapTokens = async (req, res) => {
       return errorResponse(res, 'Wallet not found', 404, 'WALLET_NOT_FOUND');
     }
 
-    const biometricResult = await verifyBiometric(
-      biometricData,
-      userId.toString()
-    );
-    if (!biometricResult.verified) {
-      return errorResponse(
-        res,
-        'Biometric verification failed',
-        401,
-        'BIOMETRIC_FAILED'
-      );
-    }
-
-    const facialResult = await verifyFacial(
-      facialData,
-      userId.toString()
-    );
-    if (!facialResult.verified) {
-      return errorResponse(
-        res,
-        'Facial verification failed',
-        401,
-        'FACIAL_FAILED'
-      );
-    }
-
-    logger.info(`Swap transaction initiated for user: ${userId}`);
-
-    return successResponse(res, 'Swap functionality coming soon', {
-      fromToken,
-      toToken,
+    const fraudAnalysis = await analyzeFraud({
+      from: wallet.smartAccountAddress,
+      to,
       amount,
-      slippage: slippage || 0.5
+      token: token || { symbol: 'ETH' },
+      network: network || wallet.network,
+      userId: req.userId.toString(),
+      deviceInfo: req.deviceInfo || {},
+      metadata: metadata || {}
     });
+
+    return successResponse(res, 'Fraud analysis completed', fraudAnalysis);
   } catch (error) {
-    logger.error('Swap tokens error:', error);
-    return errorResponse(res, 'Swap failed', 500, 'SWAP_ERROR');
+    logger.error('Check fraud error:', error);
+    return errorResponse(res, 'Failed to analyze fraud', 500, 'CHECK_FRAUD_ERROR');
   }
 };
 
+/* =======================
+   QUERY / STATUS
+======================= */
+
 const getTransactions = async (req, res) => {
-  try {
-    const userId = req.userId;
-    const { page = 1, limit = 20 } = req.query;
-
-    const result = await Transaction.getUserTransactions(
-      userId,
-      parseInt(page, 10),
-      parseInt(limit, 10)
-    );
-
-    return successResponse(res, 'Transactions retrieved successfully', result);
-  } catch (error) {
-    logger.error('Get transactions error:', error);
-    return errorResponse(
-      res,
-      'Failed to retrieve transactions',
-      500,
-      'GET_TRANSACTIONS_ERROR'
-    );
-  }
+  const { page = 1, limit = 20 } = req.query;
+  const result = await Transaction.getUserTransactions(
+    req.userId,
+    Number(page),
+    Number(limit)
+  );
+  return successResponse(res, 'Transactions retrieved successfully', result);
 };
 
 const getTransaction = async (req, res) => {
-  try {
-    const { transactionId } = req.params;
-    const userId = req.userId;
+  const tx = await Transaction.findOne({
+    _id: req.params.transactionId,
+    userId: req.userId
+  });
 
-    const transaction = await Transaction.findOne({
-      _id: transactionId,
-      userId
-    }).populate('walletId', 'address smartAccountAddress');
-
-    if (!transaction) {
-      return errorResponse(
-        res,
-        'Transaction not found',
-        404,
-        'TRANSACTION_NOT_FOUND'
-      );
-    }
-
-    return successResponse(
-      res,
-      'Transaction retrieved successfully',
-      transaction.toClientJSON()
-    );
-  } catch (error) {
-    logger.error('Get transaction error:', error);
-    return errorResponse(
-      res,
-      'Failed to retrieve transaction',
-      500,
-      'GET_TRANSACTION_ERROR'
-    );
+  if (!tx) {
+    return errorResponse(res, 'Transaction not found', 404, 'TRANSACTION_NOT_FOUND');
   }
+
+  return successResponse(res, 'Transaction retrieved successfully', tx.toClientJSON());
 };
 
 const cancelTransaction = async (req, res) => {
-  try {
-    const { transactionId } = req.params;
-    const userId = req.userId;
+  const tx = await Transaction.findOne({
+    _id: req.params.transactionId,
+    userId: req.userId
+  });
 
-    const transaction = await Transaction.findOne({
-      _id: transactionId,
-      userId
-    });
-
-    if (!transaction) {
-      return errorResponse(
-        res,
-        'Transaction not found',
-        404,
-        'TRANSACTION_NOT_FOUND'
-      );
-    }
-
-    if (transaction.status !== 'pending') {
-      return errorResponse(
-        res,
-        'Transaction cannot be cancelled',
-        400,
-        'CANNOT_CANCEL'
-      );
-    }
-
-    await transaction.markFailed('Cancelled by user', 'USER_CANCELLED');
-
-    logger.info(`Transaction cancelled: ${transactionId}`);
-
-    return successResponse(res, 'Transaction cancelled successfully');
-  } catch (error) {
-    logger.error('Cancel transaction error:', error);
-    return errorResponse(
-      res,
-      'Failed to cancel transaction',
-      500,
-      'CANCEL_TRANSACTION_ERROR'
-    );
+  if (!tx || tx.status !== 'pending') {
+    return errorResponse(res, 'Cannot cancel transaction', 400, 'CANNOT_CANCEL');
   }
+
+  await tx.markFailed('Cancelled by user', 'USER_CANCELLED');
+  return successResponse(res, 'Transaction cancelled successfully');
 };
 
 const estimateGas = async (req, res) => {
-  try {
-    const { to, amount, token } = req.body;
-    const user = req.user;
-
-    if (!user.walletId) {
-      return errorResponse(res, 'Wallet not found', 404, 'WALLET_NOT_FOUND');
-    }
-
-    const wallet = await Wallet.findById(user.walletId);
-    if (!wallet) {
-      return errorResponse(res, 'Wallet not found', 404, 'WALLET_NOT_FOUND');
-    }
-
-    const gasData = await blockchainService.estimateGas(
-      {
-        from: wallet.smartAccountAddress,
-        to,
-        value: token ? '0' : amount
-      },
-      wallet.network
-    );
-
-    return successResponse(res, 'Gas estimated successfully', {
-      ...gasData,
-      note: 'Transaction will be gasless via Biconomy'
-    });
-  } catch (error) {
-    logger.error('Estimate gas error:', error);
-    return errorResponse(
-      res,
-      'Failed to estimate gas',
-      500,
-      'ESTIMATE_GAS_ERROR'
-    );
-  }
+  const wallet = await Wallet.findById(req.user.walletId);
+  const gas = await blockchainService.estimateGas(
+    { from: wallet.smartAccountAddress, to: req.body.to },
+    wallet.network
+  );
+  return successResponse(res, 'Gas estimated successfully', gas);
 };
 
 const getPendingTransactions = async (req, res) => {
-  try {
-    const userId = req.userId;
-    const pending = await Transaction.getPendingTransactions(userId);
-
-    return successResponse(res, 'Pending transactions retrieved', {
-      transactions: pending.map((tx) => tx.toClientJSON())
-    });
-  } catch (error) {
-    logger.error('Get pending transactions error:', error);
-    return errorResponse(
-      res,
-      'Failed to retrieve pending transactions',
-      500,
-      'GET_PENDING_ERROR'
-    );
-  }
+  const pending = await Transaction.getPendingTransactions(req.userId);
+  return successResponse(res, 'Pending transactions retrieved', pending);
 };
 
 const getTransactionStatus = async (req, res) => {
-  try {
-    const { transactionId } = req.params;
-    const userId = req.userId;
+  const tx = await Transaction.findOne({
+    _id: req.params.transactionId,
+    userId: req.userId
+  });
 
-    const transaction = await Transaction.findOne({
-      _id: transactionId,
-      userId
-    });
-
-    if (!transaction) {
-      return errorResponse(
-        res,
-        'Transaction not found',
-        404,
-        'TRANSACTION_NOT_FOUND'
-      );
-    }
-
-    if (transaction.userOpHash && transaction.status === 'submitted') {
-      try {
-        const receipt = await getUserOpReceipt(
-          transaction.userOpHash,
-          transaction.network
-        );
-
-        if (receipt) {
-          await transaction.markConfirmed(
-            receipt.blockNumber,
-            receipt.actualGasUsed
-          );
-        }
-      } catch (err) {
-        logger.error('Error checking transaction status:', err);
-      }
-    }
-
-    return successResponse(res, 'Transaction status retrieved', {
-      status: transaction.status,
-      txHash: transaction.txHash,
-      userOpHash: transaction.userOpHash,
-      blockNumber: transaction.blockNumber,
-      confirmedAt: transaction.confirmedAt
-    });
-  } catch (error) {
-    logger.error('Get transaction status error:', error);
-    return errorResponse(
-      res,
-      'Failed to retrieve transaction status',
-      500,
-      'GET_STATUS_ERROR'
-    );
+  if (!tx) {
+    return errorResponse(res, 'Transaction not found', 404, 'TRANSACTION_NOT_FOUND');
   }
+
+  if (tx.userOpHash && tx.status === 'submitted') {
+    const receipt = await getUserOpReceipt(tx.userOpHash, tx.network);
+    if (receipt) {
+      await tx.markConfirmed(receipt.blockNumber, receipt.actualGasUsed);
+    }
+  }
+
+  return successResponse(res, 'Transaction status retrieved', {
+    status: tx.status,
+    userOpHash: tx.userOpHash
+  });
 };
 
 const retryTransaction = async (req, res) => {
-  try {
-    const { transactionId } = req.params;
-    const userId = req.userId;
-
-    const transaction = await Transaction.findOne({
-      _id: transactionId,
-      userId
-    });
-
-    if (!transaction) {
-      return errorResponse(
-        res,
-        'Transaction not found',
-        404,
-        'TRANSACTION_NOT_FOUND'
-      );
-    }
-
-    if (transaction.status !== 'failed') {
-      return errorResponse(
-        res,
-        'Only failed transactions can be retried',
-        400,
-        'CANNOT_RETRY'
-      );
-    }
-
-    logger.info(`Transaction retry initiated: ${transactionId}`);
-
-    return successResponse(res, 'Retry functionality coming soon');
-  } catch (error) {
-    logger.error('Retry transaction error:', error);
-    return errorResponse(
-      res,
-      'Failed to retry transaction',
-      500,
-      'RETRY_TRANSACTION_ERROR'
-    );
-  }
+  return successResponse(res, 'Retry functionality coming soon');
 };
+
+/* =======================
+   EXPORTS (MATCH ROUTES)
+======================= */
 
 module.exports = {
   sendTransaction,
   swapTokens,
+  checkFraud,
   getTransactions,
   getTransaction,
   cancelTransaction,

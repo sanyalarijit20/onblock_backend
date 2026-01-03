@@ -5,6 +5,10 @@ const { errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 const config = require('../config/env');
 
+/* =======================
+   AUTHENTICATION
+======================= */
+
 const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -31,7 +35,6 @@ const authenticate = async (req, res, next) => {
     }
 
     const user = await User.findById(userId);
-
     if (!user) {
       return errorResponse(res, 'User not found', 401, 'USER_NOT_FOUND');
     }
@@ -54,6 +57,10 @@ const authenticate = async (req, res, next) => {
     return errorResponse(res, 'Authentication failed', 500, 'AUTH_ERROR');
   }
 };
+
+/* =======================
+   OPTIONAL AUTH
+======================= */
 
 const optionalAuth = async (req, res, next) => {
   try {
@@ -90,18 +97,17 @@ const optionalAuth = async (req, res, next) => {
   }
 };
 
+/* =======================
+   VERIFICATION MIDDLEWARES
+======================= */
+
 const requireBiometric = (req, res, next) => {
   if (!req.user) {
     return errorResponse(res, 'Authentication required', 401, 'AUTH_REQUIRED');
   }
 
-  if (!req.user.biometricData?.isVerified) {
-    return errorResponse(
-      res,
-      'Biometric verification required',
-      403,
-      'BIOMETRIC_REQUIRED'
-    );
+  if (!req.user.biometricEnabled) {
+    return errorResponse(res, 'Biometric verification required', 403, 'BIOMETRIC_REQUIRED');
   }
 
   next();
@@ -112,13 +118,8 @@ const requireFacial = (req, res, next) => {
     return errorResponse(res, 'Authentication required', 401, 'AUTH_REQUIRED');
   }
 
-  if (!req.user.biometricData?.isVerified) {
-    return errorResponse(
-      res,
-      'Facial verification required',
-      403,
-      'FACIAL_REQUIRED'
-    );
+  if (!req.user.facialRecognitionEnabled) {
+    return errorResponse(res, 'Facial verification required', 403, 'FACIAL_REQUIRED');
   }
 
   next();
@@ -129,17 +130,40 @@ const requireKYC = (req, res, next) => {
     return errorResponse(res, 'Authentication required', 401, 'AUTH_REQUIRED');
   }
 
-  if (!req.user.isKYCComplete()) {
-    return errorResponse(
-      res,
-      'KYC verification required',
-      403,
-      'KYC_REQUIRED'
-    );
+  if (!req.user.isKYCComplete || !req.user.isKYCComplete()) {
+    return errorResponse(res, 'KYC verification required', 403, 'KYC_REQUIRED');
   }
 
   next();
 };
+
+/* =======================
+   FULL VERIFICATION (USED BY TRANSACTIONS)
+======================= */
+
+const requireFullVerification = (req, res, next) => {
+  if (!req.user) {
+    return errorResponse(res, 'Authentication required', 401, 'AUTH_REQUIRED');
+  }
+
+  if (!req.user.biometricEnabled) {
+    return errorResponse(res, 'Biometric verification required', 403, 'BIOMETRIC_REQUIRED');
+  }
+
+  if (!req.user.facialRecognitionEnabled) {
+    return errorResponse(res, 'Facial verification required', 403, 'FACIAL_REQUIRED');
+  }
+
+  if (!req.user.isKYCComplete || !req.user.isKYCComplete()) {
+    return errorResponse(res, 'KYC verification required', 403, 'KYC_REQUIRED');
+  }
+
+  next();
+};
+
+/* =======================
+   WALLET CHECK
+======================= */
 
 const requireWallet = async (req, res, next) => {
   if (!req.user) {
@@ -164,15 +188,21 @@ const requireWallet = async (req, res, next) => {
   next();
 };
 
+/* =======================
+   SIGNATURE
+======================= */
+
 const verifySignature = (req, res, next) => {
   const signature = req.headers['x-signature'];
-
   if (!signature) {
     return errorResponse(res, 'Signature missing', 400, 'SIGNATURE_REQUIRED');
   }
-
   next();
 };
+
+/* =======================
+   EXPORTS (MATCH ROUTES)
+======================= */
 
 module.exports = {
   authenticate,
@@ -181,5 +211,6 @@ module.exports = {
   requireFacial,
   requireKYC,
   requireWallet,
+  requireFullVerification,
   verifySignature
 };
