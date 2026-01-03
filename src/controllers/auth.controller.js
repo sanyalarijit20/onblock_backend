@@ -2,7 +2,12 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/user.model');
 const { successResponse, errorResponse } = require('../utils/response');
 const { generateTokenPair, verifyToken, refreshAccessToken } = require('../services/jwt.service');
-const { enrollBiometric, verifyBiometric, enrollFacial, verifyFacial } = require('../services/fraud_ml.service');
+const {
+  enrollBiometric,
+  verifyBiometric: verifyBiometricML,
+  enrollFacial,
+  verifyFacial: verifyFacialML
+} = require('../services/fraud_ml.service');
 const logger = require('../utils/logger');
 
 const register = async (req, res) => {
@@ -49,7 +54,15 @@ const register = async (req, res) => {
 
 const login = async (req, res) => {
   try {
-    const { identifier, password } = req.body;
+    const { identifier, password, biometricData, facialData, imageData } = req.body;
+
+    if (!password) {
+      return errorResponse(res, 'Password is required', 400, 'PASSWORD_REQUIRED');
+    }
+
+    if (!biometricData) {
+      return errorResponse(res, 'Biometric data is required', 400, 'BIOMETRIC_REQUIRED');
+    }
 
     const user = await User.findOne({
       $or: [{ email: identifier }, { phoneNumber: identifier }]
@@ -69,8 +82,22 @@ const login = async (req, res) => {
       return errorResponse(res, 'Account is deactivated', 403, 'ACCOUNT_DEACTIVATED');
     }
 
-    if (user.securityFlags.isBlocked) {
+    if (user.securityFlags?.isBlocked) {
       return errorResponse(res, 'Account is blocked', 403, 'ACCOUNT_BLOCKED');
+    }
+
+    const biometricResult = await verifyBiometricML(biometricData, user._id.toString());
+
+    if (!biometricResult || !biometricResult.verified) {
+      return errorResponse(res, 'Biometric verification failed', 401, 'BIOMETRIC_VERIFY_FAILED');
+    }
+
+    if (facialData) {
+      const facialResult = await verifyFacialML(facialData, user._id.toString(), imageData);
+
+      if (!facialResult || !facialResult.verified) {
+        return errorResponse(res, 'Facial verification failed', 401, 'FACIAL_VERIFY_FAILED');
+      }
     }
 
     user.lastLogin = new Date();
@@ -184,7 +211,7 @@ const verifyBiometric = async (req, res) => {
     const { biometricData } = req.body;
     const userId = req.userId;
 
-    const result = await verifyBiometric(biometricData, userId.toString());
+    const result = await verifyBiometricML(biometricData, userId.toString());
 
     if (!result.verified) {
       return errorResponse(res, 'Biometric verification failed', 401, 'BIOMETRIC_VERIFY_FAILED');
@@ -232,7 +259,7 @@ const verifyFacial = async (req, res) => {
     const { facialData, imageData } = req.body;
     const userId = req.userId;
 
-    const result = await verifyFacial(facialData, userId.toString(), imageData);
+    const result = await verifyFacialML(facialData, userId.toString(), imageData);
 
     if (!result.verified) {
       return errorResponse(res, 'Facial verification failed', 401, 'FACIAL_VERIFY_FAILED');
