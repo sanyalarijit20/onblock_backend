@@ -5,50 +5,46 @@ const {
   generateTokenPair,
   refreshAccessToken
 } = require('../services/jwt.service');
-const {
-  enrollBiometric,
-  verifyBiometric: verifyBiometricML,
-  enrollFacial,
-  verifyFacial: verifyFacialML
-} = require('../services/fraud_ml.service');
 const logger = require('../utils/logger');
 
+const DEMO_MODE = process.env.DEMO_MODE === 'true';
+
 /* =========================
-   REGISTER
+   REGISTER (DEMO BYPASS)
 ========================= */
 const register = async (req, res) => {
   try {
-    const { email, phoneNumber, password, fullName } = req.body;
+    let { email, phoneNumber, password, fullName } = req.body;
 
-    // Hard guard
-    if (!email || !phoneNumber || !password || !fullName) {
-      return errorResponse(
-        res,
-        'Required fields missing',
-        400,
-        'MISSING_FIELDS'
-      );
+    // DEMO MODE: auto-fill everything
+    if (DEMO_MODE) {
+      email = email || `demo_${Date.now()}@example.com`;
+      phoneNumber = phoneNumber || `${Math.floor(9000000000 + Math.random() * 999999999)}`;
+      fullName = fullName || 'Demo User';
+      password = password || 'Demo@1234';
     }
 
     // Check existing user
-    const existingUser = await User.findOne({
+    let user = await User.findOne({
       $or: [{ email }, { phoneNumber }]
     });
 
-    if (existingUser) {
-      return errorResponse(
-        res,
-        'Email or phone number already registered',
-        409,
-        'USER_EXISTS'
-      );
+    // DEMO MODE: auto-login if user exists
+    if (user && DEMO_MODE) {
+      const tokens = generateTokenPair(user._id.toString());
+      return successResponse(res, 'Demo user logged in', {
+        user,
+        ...tokens
+      });
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
+    if (user) {
+      return errorResponse(res, 'User already exists', 409, 'USER_EXISTS');
+    }
 
-    // Create user
-    const user = await User.create({
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    user = await User.create({
       email,
       phoneNumber,
       password: hashedPassword,
@@ -56,102 +52,49 @@ const register = async (req, res) => {
       isActive: true
     });
 
-    // Generate tokens
     const tokens = generateTokenPair(user._id.toString());
 
-    logger.info(`User registered: ${user._id}`);
+    return successResponse(res, 'Registration successful', {
+      user,
+      ...tokens
+    }, 201);
 
-    return successResponse(
-      res,
-      'Registration successful',
-      {
-        user: {
-          id: user._id,
-          email: user.email,
-          phoneNumber: user.phoneNumber,
-          fullName: user.fullName,
-          isActive: user.isActive,
-          createdAt: user.createdAt
-        },
-        ...tokens
-      },
-      201
-    );
   } catch (error) {
     logger.error('REGISTER ERROR:', error);
-    return errorResponse(
-      res,
-      error.message || 'Registration failed',
-      500,
-      'REGISTER_ERROR'
-    );
+    return errorResponse(res, error.message, 500, 'REGISTER_ERROR');
   }
 };
 
 /* =========================
-   LOGIN
+   LOGIN (DEMO BYPASS)
 ========================= */
 const login = async (req, res) => {
   try {
-    const { identifier, password, biometricData, facialData, imageData } =
-      req.body;
+    const { identifier, password } = req.body;
 
-    if (!identifier || !password || !biometricData) {
-      return errorResponse(
-        res,
-        'Missing login credentials',
-        400,
-        'LOGIN_DATA_MISSING'
-      );
-    }
-
-    const user = await User.findOne({
+    let user = await User.findOne({
       $or: [{ email: identifier }, { phoneNumber: identifier }]
     });
+
+    // DEMO MODE: auto-create + login
+    if (!user && DEMO_MODE) {
+      user = await User.create({
+        email: identifier || `demo_${Date.now()}@example.com`,
+        phoneNumber: `${Math.floor(9000000000 + Math.random() * 999999999)}`,
+        password: await bcrypt.hash('Demo@1234', 10),
+        fullName: 'Demo User',
+        isActive: true
+      });
+    }
 
     if (!user) {
       return errorResponse(res, 'Invalid credentials', 401, 'INVALID_CREDENTIALS');
     }
 
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      return errorResponse(res, 'Invalid credentials', 401, 'INVALID_CREDENTIALS');
-    }
-
-    if (!user.isActive) {
-      return errorResponse(res, 'Account deactivated', 403, 'ACCOUNT_DEACTIVATED');
-    }
-
-    // Biometric verification
-    const biometricResult = await verifyBiometricML(
-      biometricData,
-      user._id.toString()
-    );
-
-    if (!biometricResult?.verified) {
-      return errorResponse(
-        res,
-        'Biometric verification failed',
-        401,
-        'BIOMETRIC_VERIFY_FAILED'
-      );
-    }
-
-    // Optional facial verification
-    if (facialData) {
-      const facialResult = await verifyFacialML(
-        facialData,
-        user._id.toString(),
-        imageData
-      );
-
-      if (!facialResult?.verified) {
-        return errorResponse(
-          res,
-          'Facial verification failed',
-          401,
-          'FACIAL_VERIFY_FAILED'
-        );
+    if (!DEMO_MODE) {
+      const valid = await bcrypt.compare(password, user.password);
+      if (!valid) {
+        return errorResponse(res, 'Invalid credentials', 401, 'INVALID_CREDENTIALS');
       }
     }
 
@@ -161,18 +104,13 @@ const login = async (req, res) => {
     const tokens = generateTokenPair(user._id.toString());
 
     return successResponse(res, 'Login successful', {
-      user: {
-        id: user._id,
-        email: user.email,
-        phoneNumber: user.phoneNumber,
-        fullName: user.fullName,
-        lastLogin: user.lastLogin
-      },
+      user,
       ...tokens
     });
+
   } catch (error) {
     logger.error('LOGIN ERROR:', error);
-    return errorResponse(res, 'Login failed', 500, 'LOGIN_ERROR');
+    return errorResponse(res, error.message, 500, 'LOGIN_ERROR');
   }
 };
 
@@ -182,19 +120,9 @@ const login = async (req, res) => {
 const refreshToken = async (req, res) => {
   try {
     const { refreshToken } = req.body;
-    if (!refreshToken) {
-      return errorResponse(
-        res,
-        'Refresh token missing',
-        400,
-        'REFRESH_TOKEN_MISSING'
-      );
-    }
-
-    const newTokens = refreshAccessToken(refreshToken);
-    return successResponse(res, 'Token refreshed', newTokens);
+    const tokens = refreshAccessToken(refreshToken);
+    return successResponse(res, 'Token refreshed', tokens);
   } catch (error) {
-    logger.error('REFRESH TOKEN ERROR:', error);
     return errorResponse(res, 'Invalid refresh token', 401, 'REFRESH_TOKEN_INVALID');
   }
 };
@@ -204,25 +132,12 @@ const refreshToken = async (req, res) => {
 ========================= */
 const getProfile = async (req, res) => {
   try {
-    const user = req.user;
-    return successResponse(res, 'Profile retrieved', {
-      id: user._id,
-      email: user.email,
-      phoneNumber: user.phoneNumber,
-      fullName: user.fullName,
-      isActive: user.isActive,
-      lastLogin: user.lastLogin,
-      createdAt: user.createdAt
-    });
+    return successResponse(res, 'Profile', req.user);
   } catch (error) {
-    logger.error('GET PROFILE ERROR:', error);
-    return errorResponse(res, 'Failed to get profile', 500, 'GET_PROFILE_ERROR');
+    return errorResponse(res, 'Profile fetch failed', 500, 'PROFILE_ERROR');
   }
 };
 
-/* =========================
-   EXPORTS
-========================= */
 module.exports = {
   register,
   login,
