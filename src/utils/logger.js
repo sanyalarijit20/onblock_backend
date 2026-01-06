@@ -3,6 +3,9 @@ const DailyRotateFile = require('winston-daily-rotate-file');
 const path = require('path');
 const { NODE_ENV, LOG_LEVEL, LOG_FILE_PATH } = require('../config/env');
 
+// Detect if we are running on Vercel
+const isVercel = process.env.VERCEL === '1';
+
 const logFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.errors({ stack: true }),
@@ -22,46 +25,41 @@ const consoleFormat = winston.format.combine(
   })
 );
 
-
-const errorFileTransport = new DailyRotateFile({
-  filename: path.join(LOG_FILE_PATH, 'error-%DATE%.log'),
-  datePattern: 'YYYY-MM-DD',
-  level: 'error',
-  maxSize: '20m',
-  maxFiles: '14d',
-  format: logFormat,
-});
-
-
-const combinedFileTransport = new DailyRotateFile({
-  filename: path.join(LOG_FILE_PATH, 'combined-%DATE%.log'),
-  datePattern: 'YYYY-MM-DD',
-  maxSize: '20m',
-  maxFiles: '14d',
-  format: logFormat,
-});
-
-
-const consoleTransport = new winston.transports.Console({
-  format: consoleFormat,
-});
-
-
 const transports = [];
 
+// Always add Console transport for both local (Elitebook) and cloud (Vercel)
+transports.push(new winston.transports.Console({
+  format: consoleFormat,
+}));
 
-if (NODE_ENV === 'development') {
-  transports.push(consoleTransport);
-}
+// ONLY add File Transports if we are NOT on Vercel
+if (!isVercel && (NODE_ENV === 'production' || process.env.ENABLE_FILE_LOGGING === 'true')) {
+  // We wrap this in a check because LOG_FILE_PATH might be invalid in serverless
+  if (LOG_FILE_PATH) {
+    const errorFileTransport = new DailyRotateFile({
+      filename: path.join(LOG_FILE_PATH, 'error-%DATE%.log'),
+      datePattern: 'YYYY-MM-DD',
+      level: 'error',
+      maxSize: '20m',
+      maxFiles: '14d',
+      format: logFormat,
+    });
 
+    const combinedFileTransport = new DailyRotateFile({
+      filename: path.join(LOG_FILE_PATH, 'combined-%DATE%.log'),
+      datePattern: 'YYYY-MM-DD',
+      maxSize: '20m',
+      maxFiles: '14d',
+      format: logFormat,
+    });
 
-if (NODE_ENV === 'production' || process.env.ENABLE_FILE_LOGGING === 'true') {
-  transports.push(errorFileTransport);
-  transports.push(combinedFileTransport);
-}
+    transports.push(errorFileTransport);
+    transports.push(combinedFileTransport);
 
-if (transports.length === 0) {
-  transports.push(consoleTransport);
+    errorFileTransport.on('rotate', (oldFilename, newFilename) => {
+      console.log(`Log file rotated: ${oldFilename} -> ${newFilename}`);
+    });
+  }
 }
 
 const logger = winston.createLogger({
@@ -71,76 +69,40 @@ const logger = winston.createLogger({
   exitOnError: false,
 });
 
-
-errorFileTransport.on('rotate', (oldFilename, newFilename) => {
-  logger.info(`Log file rotated: ${oldFilename} -> ${newFilename}`);
-});
-
-combinedFileTransport.on('rotate', (oldFilename, newFilename) => {
-  logger.info(`Log file rotated: ${oldFilename} -> ${newFilename}`);
-});
-
-
+// Helper Methods
 logger.logRequest = (req, statusCode, responseTime) => {
   const message = `${req.method} ${req.originalUrl} - ${statusCode} - ${responseTime}ms - ${req.ip}`;
-  
-  if (statusCode >= 500) {
-    logger.error(message);
-  } else if (statusCode >= 400) {
-    logger.warn(message);
-  } else {
-    logger.info(message);
-  }
+  if (statusCode >= 500) logger.error(message);
+  else if (statusCode >= 400) logger.warn(message);
+  else logger.info(message);
 };
-
 
 logger.logTransaction = (action, details) => {
-  logger.info(`Blockchain Transaction [${action}]:`, {
-    ...details,
-    timestamp: new Date().toISOString(),
-  });
+  logger.info(`Blockchain Transaction [${action}]:`, { ...details, timestamp: new Date().toISOString() });
 };
-
 
 logger.logMLService = (endpoint, result) => {
-  logger.info(`ML Service Call [${endpoint}]:`, {
-    ...result,
-    timestamp: new Date().toISOString(),
-  });
+  logger.info(`ML Service Call [${endpoint}]:`, { ...result, timestamp: new Date().toISOString() });
 };
-
 
 logger.logAuth = (event, userId, details = {}) => {
-  logger.info(`Auth Event [${event}] - User: ${userId}`, {
-    ...details,
-    timestamp: new Date().toISOString(),
-  });
+  logger.info(`Auth Event [${event}] - User: ${userId}`, { ...details, timestamp: new Date().toISOString() });
 };
-
 
 logger.logFraud = (fraudDetails) => {
   const level = fraudDetails.isFraud ? 'warn' : 'info';
-  logger[level]('Fraud Detection:', {
-    ...fraudDetails,
-    timestamp: new Date().toISOString(),
-  });
+  logger[level]('Fraud Detection:', { ...fraudDetails, timestamp: new Date().toISOString() });
 };
-
 
 logger.stream = {
-  write: (message) => {
-    logger.info(message.trim());
-  },
+  write: (message) => logger.info(message.trim()),
 };
 
-
-if (NODE_ENV === 'development') {
-  logger.info(' Logger initialized in DEVELOPMENT mode');
-  logger.info(` Log level: ${LOG_LEVEL || 'info'}`);
+// Initialization info (Console only)
+if (isVercel) {
+  logger.info('Logger initialized in VERCEL cloud mode (Console logging only)');
 } else {
-  logger.info(' Logger initialized in PRODUCTION mode');
-  logger.info(` Log level: ${LOG_LEVEL || 'info'}`);
-  logger.info(` Log files location: ${LOG_FILE_PATH}`);
+  logger.info(`Logger initialized in ${NODE_ENV.toUpperCase()} mode`);
 }
 
 module.exports = logger;
