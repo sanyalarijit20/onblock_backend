@@ -6,15 +6,15 @@ const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
 
 // Import utilities and config
-const logger = require('./utils/logger');
-const { NODE_ENV, PORT } = require('./config/env');
-const { connectDB } = require('./config/db');
-const { successResponse, errorResponse } = require('./utils/response');
+const logger = require('./src/utils/logger');
+const { NODE_ENV, PORT } = require('./src/config/env');
+const { connectDB } = require('./src/config/db');
+const { successResponse, errorResponse } = require('./src/utils/response');
 
 // Import Routes
-const authRoutes = require('./routes/auth.routes');
-const userRoutes = require('./routes/user.routes');
-const transactionRoutes = require('./routes/transaction.routes');
+const authRoutes = require('./src/routes/auth.routes');
+const userRoutes = require('./src/routes/user.routes');
+const transactionRoutes = require('./src/routes/transaction.routes');
 
 const app = express();
 
