@@ -99,6 +99,7 @@ const sendTransaction = async (req, res) => {
       from: wallet.smartAccountAddress,
       to,
       network: network || wallet.network,
+      chainId: wallet.chainId,
       status: 'pending',
       fraudAnalysis: {
         ...fraudAnalysis,
@@ -117,7 +118,7 @@ const sendTransaction = async (req, res) => {
       token?.address
     );
 
-    const nonceData = await getSmartAccountNonce(
+    const nonce = await getSmartAccountNonce(
       wallet.smartAccountAddress,
       network || wallet.network
     );
@@ -126,7 +127,7 @@ const sendTransaction = async (req, res) => {
 
     builder
       .setSender(wallet.smartAccountAddress)
-      .setNonce(nonceData.nonce)
+      .setNonce(nonce)
       .setCallData(callData);
 
     await builder.setGasFees();

@@ -36,13 +36,11 @@ const transactionSchema = new mongoose.Schema(
 
     txHash: {
       type: String,
-      sparse: true,
       lowercase: true
     },
 
     userOpHash: {
       type: String,
-      sparse: true,
       lowercase: true
     },
 
@@ -156,5 +154,59 @@ transactionSchema.index({ 'deviceInfo.ipAddress': 1 });
 transactionSchema.index({ to: 1, userId: 1 });
 
 /* ========= METHODS & STATICS UNCHANGED ========= */
+
+// Instance methods
+transactionSchema.methods.markSubmitted = async function (txHash = null, userOpHash = null) {
+  this.status = 'submitted';
+  if (txHash) this.txHash = txHash;
+  if (userOpHash) this.userOpHash = userOpHash;
+  this.submittedAt = new Date();
+  return this.save();
+};
+
+transactionSchema.methods.markConfirmed = async function (blockNumber = null, actualGasUsed = null) {
+  this.status = 'confirmed';
+  if (blockNumber !== null) this.blockNumber = blockNumber;
+  if (actualGasUsed !== null) this.gas = { ...(this.gas || {}), actualGasUsed: actualGasUsed.toString() };
+  this.confirmedAt = new Date();
+  return this.save();
+};
+
+transactionSchema.methods.markFailed = async function (message = 'failed', code = 'FAILED') {
+  this.status = 'failed';
+  this.errorMessage = message;
+  this.errorCode = code;
+  return this.save();
+};
+
+transactionSchema.methods.toClientJSON = function () {
+  const obj = this.toObject({ virtuals: true });
+  delete obj.__v;
+  return obj;
+};
+
+// Statics
+transactionSchema.statics.getUserTransactions = async function (userId, page = 1, limit = 20) {
+  const query = { userId };
+  const skip = (page - 1) * limit;
+  const [items, total] = await Promise.all([
+    this.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    this.countDocuments(query)
+  ]);
+
+  return {
+    items,
+    page,
+    limit,
+    total
+  };
+};
+
+transactionSchema.statics.getPendingTransactions = async function (userId = null) {
+  const query = { status: 'pending' };
+  if (userId) query.userId = userId;
+  return this.find(query).sort({ createdAt: 1 }).lean();
+};
+
 
 module.exports = mongoose.model('Transaction', transactionSchema);

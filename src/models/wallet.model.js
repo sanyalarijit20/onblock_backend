@@ -171,5 +171,10 @@ walletSchema.index({ createdAt: -1 });
 
 /* ========= VIRTUALS, HOOKS, METHODS UNCHANGED ========= */
 
+// Expose a convenient property for smart account address
+walletSchema.virtual('smartAccountAddress').get(function () {
+  return (this.smartAccountConfig && this.smartAccountConfig.ownerAddress) || this.address;
+});
+
 const Wallet = mongoose.model('Wallet', walletSchema);
 module.exports = Wallet;
