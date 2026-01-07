@@ -1,146 +1,161 @@
-const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const User = require('../models/user.model');
+const config = require('../config/env');
 const { successResponse, errorResponse } = require('../utils/response');
-const {
-  generateTokenPair,
-  refreshAccessToken
-} = require('../services/jwt.service');
 const logger = require('../utils/logger');
 
-const DEMO_MODE = process.env.DEMO_MODE === 'true';
-
-/* =========================
-   REGISTER (DEMO BYPASS)
-========================= */
-const register = async (req, res) => {
-  try {
-    let { email, phoneNumber, password, fullName } = req.body;
-
-    // DEMO MODE: auto-fill everything
-    if (DEMO_MODE) {
-      email = email || `demo_${Date.now()}@example.com`;
-      phoneNumber = phoneNumber || `${Math.floor(9000000000 + Math.random() * 999999999)}`;
-      fullName = fullName || 'Demo User';
-      password = password || 'Demo@1234';
-    }
-
-    // Check existing user
-    let user = await User.findOne({
-      $or: [{ email }, { phoneNumber }]
-    });
-
-    // DEMO MODE: auto-login if user exists
-    if (user && DEMO_MODE) {
-      const tokens = generateTokenPair(user._id.toString());
-      return successResponse(res, 'Demo user logged in', {
-        user,
-        ...tokens
-      });
-    }
-
-    if (user) {
-      return errorResponse(res, 'User already exists', 409, 'USER_EXISTS');
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    user = await User.create({
-      email,
-      phoneNumber,
-      password: hashedPassword,
-      fullName,
-      isActive: true
-    });
-
-    const tokens = generateTokenPair(user._id.toString());
-
-    return successResponse(res, 'Registration successful', {
-      user,
-      ...tokens
-    }, 201);
-
-  } catch (error) {
-    logger.error('REGISTER ERROR:', error);
-    return errorResponse(res, error.message, 500, 'REGISTER_ERROR');
-  }
+const signToken = (id, secret, expire) => {
+    return jwt.sign({ id }, secret, { expiresIn: expire });
 };
 
-/* =========================
-   LOGIN (DEMO BYPASS)
-========================= */
-const login = async (req, res) => {
-  try {
-    const { identifier, password } = req.body;
+const createSendToken = async (user, statusCode, res) => {
+    const accessToken = signToken(user._id, config.JWT_SECRET, config.JWT_EXPIRE);
+    const refreshToken = signToken(user._id, config.JWT_REFRESH_SECRET, config.JWT_REFRESH_EXPIRE);
 
-    let user = await User.findOne({
-      $or: [{ email: identifier }, { phoneNumber: identifier }]
+    user.refreshToken = refreshToken;
+    user.lastLogin = Date.now();
+    await user.save({ validateBeforeSave: false });
+
+    user.password = undefined;
+    user.refreshToken = undefined;
+
+    res.status(statusCode).json({
+        success: true,
+        token: accessToken,
+        refreshToken: refreshToken,
+        data: { user }
     });
-
-    // DEMO MODE: auto-create + login
-    if (!user && DEMO_MODE) {
-      user = await User.create({
-        email: identifier || `demo_${Date.now()}@example.com`,
-        phoneNumber: `${Math.floor(9000000000 + Math.random() * 999999999)}`,
-        password: await bcrypt.hash('Demo@1234', 10),
-        fullName: 'Demo User',
-        isActive: true
-      });
-    }
-
-    if (!user) {
-      return errorResponse(res, 'Invalid credentials', 401, 'INVALID_CREDENTIALS');
-    }
-
-    if (!DEMO_MODE) {
-      const valid = await bcrypt.compare(password, user.password);
-      if (!valid) {
-        return errorResponse(res, 'Invalid credentials', 401, 'INVALID_CREDENTIALS');
-      }
-    }
-
-    user.lastLogin = new Date();
-    await user.save();
-
-    const tokens = generateTokenPair(user._id.toString());
-
-    return successResponse(res, 'Login successful', {
-      user,
-      ...tokens
-    });
-
-  } catch (error) {
-    logger.error('LOGIN ERROR:', error);
-    return errorResponse(res, error.message, 500, 'LOGIN_ERROR');
-  }
 };
 
-/* =========================
-   REFRESH TOKEN
-========================= */
-const refreshToken = async (req, res) => {
-  try {
-    const { refreshToken } = req.body;
-    const tokens = refreshAccessToken(refreshToken);
-    return successResponse(res, 'Token refreshed', tokens);
-  } catch (error) {
-    return errorResponse(res, 'Invalid refresh token', 401, 'REFRESH_TOKEN_INVALID');
-  }
+exports.signup = async (req, res) => {
+    try {
+        const { email, password, firstName, lastName, phoneNumber } = req.body;
+
+        const existingUser = await User.findOne({ $or: [{ email }, { phoneNumber }] });
+        if (existingUser) {
+            return errorResponse(res, 'User with this email or phone already exists', 400);
+        }
+
+        const newUser = await User.create({
+            email,
+            password,
+            firstName,
+            lastName,
+            phoneNumber
+        });
+
+        createSendToken(newUser, 201, res);
+    } catch (err) {
+        logger.error('Signup Error:', err);
+        errorResponse(res, err.message, 500);
+    }
 };
 
-/* =========================
-   PROFILE
-========================= */
-const getProfile = async (req, res) => {
-  try {
-    return successResponse(res, 'Profile', req.user);
-  } catch (error) {
-    return errorResponse(res, 'Profile fetch failed', 500, 'PROFILE_ERROR');
-  }
+exports.login = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return errorResponse(res, 'Please provide email and password', 400);
+        }
+
+        const user = await User.findOne({ email }).select('+password +loginAttempts +lockUntil');
+
+        if (!user) {
+            return errorResponse(res, 'Invalid credentials', 401);
+        }
+
+        if (user.lockUntil && user.lockUntil > Date.now()) {
+            return errorResponse(res, 'Account locked. Try again later', 403);
+        }
+
+        const isMatch = await user.comparePassword(password);
+
+        if (!isMatch) {
+            user.loginAttempts += 1;
+            if (user.loginAttempts >= 5) {
+                user.lockUntil = Date.now() + 30 * 60 * 1000; 
+            }
+            await user.save({ validateBeforeSave: false });
+            return errorResponse(res, 'Invalid credentials', 401);
+        }
+
+        user.loginAttempts = 0;
+        user.lockUntil = undefined;
+        user.lastLoginIP = req.ip;
+        
+        createSendToken(user, 200, res);
+    } catch (err) {
+        logger.error('Login Error:', err);
+        errorResponse(res, 'Internal Server Error', 500);
+    }
 };
 
-module.exports = {
-  register,
-  login,
-  refreshToken,
-  getProfile
+exports.refreshToken = async (req, res) => {
+    try {
+        const { refreshToken } = req.body;
+
+        if (!refreshToken) {
+            return errorResponse(res, 'Refresh token required', 400);
+        }
+
+        const decoded = jwt.verify(refreshToken, config.JWT_REFRESH_SECRET);
+        const user = await User.findById(decoded.id).select('+refreshToken');
+
+        if (!user || user.refreshToken !== refreshToken) {
+            return errorResponse(res, 'Invalid refresh token', 401);
+        }
+
+        const newAccessToken = signToken(user._id, config.JWT_SECRET, config.JWT_EXPIRE);
+        
+        res.status(200).json({
+            success: true,
+            token: newAccessToken
+        });
+    } catch (err) {
+        errorResponse(res, 'Invalid or expired refresh token', 401);
+    }
+};
+
+exports.logout = async (req, res) => {
+    try {
+        const user = await User.findById(req.userId);
+        if (user) {
+            user.refreshToken = undefined;
+            await user.save({ validateBeforeSave: false });
+        }
+        successResponse(res, 'Logged out successfully');
+    } catch (err) {
+        errorResponse(res, 'Logout failed', 500);
+    }
+};
+
+exports.getMe = async (req, res) => {
+    try {
+        const user = await User.findById(req.userId);
+        successResponse(res, 'User profile fetched', user);
+    } catch (err) {
+        errorResponse(res, 'Failed to fetch profile', 500);
+    }
+};
+
+exports.updateProfile = async (req, res) => {
+    try {
+        const allowedUpdates = ['firstName', 'lastName', 'gender', 'dateOfBirth', 'address', 'preferences'];
+        const updates = Object.keys(req.body);
+        const isValidOperation = updates.every(update => allowedUpdates.includes(update));
+
+        if (!isValidOperation) {
+            return errorResponse(res, 'Invalid update fields', 400);
+        }
+
+        const user = await User.findByIdAndUpdate(req.userId, req.body, {
+            new: true,
+            runValidators: true
+        });
+
+        successResponse(res, 'Profile updated successfully', user);
+    } catch (err) {
+        errorResponse(res, err.message, 500);
+    }
 };
