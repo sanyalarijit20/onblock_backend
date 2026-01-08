@@ -7,6 +7,14 @@
 
 
 const logger = require('../utils/logger');
+const axios = require('axios');
+const config = require('../config/env');
+
+const ML_BASE = config.ML_SERVICE_URL;
+const FRAUD_ENDPOINT = config.ML_FRAUD_DETECTION_ENDPOINT || '/check-fraud';
+const BIOMETRIC_ENDPOINT = config.ML_BIOMETRIC_VERIFICATION_ENDPOINT;
+const FACIAL_ENDPOINT = config.ML_FACIAL_RECOGNITION_ENDPOINT;
+const ML_TIMEOUT = config.ML_SERVICE_TIMEOUT || 30000;
 
 
 /**
@@ -14,25 +22,38 @@ const logger = require('../utils/logger');
 * @param {Object} transactionData - { amount, token, sender, receiver, etc. }
 */
 const analyzeFraud = async (transactionData) => {
- logger.info('Analyzing fraud for transaction...');
-  // Simulate processing delay (ML inference time)
- await new Promise(resolve => setTimeout(resolve, 800));
+  logger.info('Analyzing fraud for transaction...');
 
+  // If ML service configured, call it; otherwise fall back to demo logic
+  if (ML_BASE) {
+    try {
+      const url = `${ML_BASE.replace(/\/$/, '')}${FRAUD_ENDPOINT}`;
+      const resp = await axios.post(url, transactionData, {
+        timeout: ML_TIMEOUT,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(config.ML_SERVICE_API_KEY ? { 'x-api-key': config.ML_SERVICE_API_KEY } : {})
+        }
+      });
 
- // DEMO LOGIC:
- // If amount > 10000, flag as "High Risk" to show UI warning (optional demo feature)
- // Otherwise, return safe.
- const isHighValue = parseFloat(transactionData.amount) > 10000;
+      return resp.data;
+    } catch (err) {
+      logger.warn('ML fraud service unreachable, falling back to demo logic', err.message);
+    }
+  }
 
+  // Fallback demo logic
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  const isHighValue = parseFloat(transactionData.amount) > config.HIGH_RISK_AMOUNT_THRESHOLD;
 
- return {
-   isBlocked: false, // Don't block for demo
-   riskScore: isHighValue ? 85.0 : 12.5, // 0-100
-   signals: isHighValue ? ['high_value_transfer'] : [],
-   detectedPatterns: [],
-   mlModelVersion: 'v1.0.0-demo',
-   analyzedAt: new Date()
- };
+  return {
+    isBlocked: false,
+    riskScore: isHighValue ? 0.85 : 0.125,
+    signals: isHighValue ? ['high_value_transfer'] : [],
+    detectedPatterns: [],
+    mlModelVersion: 'v1.0.0-demo',
+    analyzedAt: new Date()
+  };
 };
 
 
@@ -42,17 +63,21 @@ const analyzeFraud = async (transactionData) => {
 * @param {String} userId
 */
 const verifyBiometric = async (bioData, userId) => {
- // In real app: Verify signature against public key stored for user
- logger.info(`Verifying biometric for user ${userId}`);
-  // Simulate delay
- await new Promise(resolve => setTimeout(resolve, 300));
+  logger.info(`Verifying biometric for user ${userId}`);
 
+  if (ML_BASE && BIOMETRIC_ENDPOINT) {
+    try {
+      const url = `${ML_BASE.replace(/\/$/, '')}${BIOMETRIC_ENDPOINT}`;
+      const resp = await axios.post(url, { bioData, userId }, { timeout: ML_TIMEOUT });
+      return resp.data;
+    } catch (err) {
+      logger.warn('Biometric ML service unreachable, falling back to demo', err.message);
+    }
+  }
 
- return {
-   verified: true,
-   method: 'fingerprint',
-   timestamp: new Date()
- };
+  // Demo fallback
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  return { verified: true, method: 'fingerprint', timestamp: new Date() };
 };
 
 
@@ -62,28 +87,25 @@ const verifyBiometric = async (bioData, userId) => {
 * @param {String} userId
 */
 const verifyFacial = async (facialData, userId) => {
- logger.info(`Verifying facial identity for user ${userId}`);
+  logger.info(`Verifying facial identity for user ${userId}`);
 
+  if (ML_BASE && FACIAL_ENDPOINT) {
+    try {
+      const url = `${ML_BASE.replace(/\/$/, '')}${FACIAL_ENDPOINT}`;
+      const resp = await axios.post(url, { facialData, userId }, { timeout: ML_TIMEOUT });
+      return resp.data;
+    } catch (err) {
+      logger.warn('Facial ML service unreachable, falling back to demo', err.message);
+    }
+  }
 
- // In real app: Send to Python FaceNet microservice
- // FOR DEMO: Check if we actually received data, then approve
   if (!facialData || !facialData.imageData) {
-   logger.warn('Facial verification missing image data');
-   // For demo stability, we might still return true if you want to bypass completely,
-   // but ideally we should require "some" data to prove the frontend sent it.
-   return { verified: true, confidence: 0.95 };
- }
+    logger.warn('Facial verification missing image data');
+    return { verified: true, confidence: 0.95 };
+  }
 
-
- // Simulate ML processing time
- await new Promise(resolve => setTimeout(resolve, 1500));
-
-
- return {
-   verified: true,
-   confidence: 0.98, // High confidence for demo
-   livenessScore: 0.99
- };
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  return { verified: true, confidence: 0.98, livenessScore: 0.99 };
 };
 
 
