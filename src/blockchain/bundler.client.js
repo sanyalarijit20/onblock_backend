@@ -56,10 +56,7 @@ class BundlerClient {
 
   async estimateUserOperationGas(userOp) {
     try {
-      return await this.rpc('eth_estimateUserOperationGas', [
-        userOp,
-        this.entryPoint
-      ]);
+      return this.rpc('eth_estimateUserOperationGas', [userOp, this.entryPoint]);
     } catch (err) {
       logger.error('estimateUserOperationGas failed:', err.message);
       throw err;
@@ -68,7 +65,7 @@ class BundlerClient {
 
   async getUserOperationReceipt(userOpHash) {
     try {
-      return await this.rpc('eth_getUserOperationReceipt', [userOpHash]);
+      return this.rpc('eth_getUserOperationReceipt', [userOpHash]);
     } catch (err) {
       if (err.message.toLowerCase().includes('not found')) {
         return null;
@@ -80,7 +77,7 @@ class BundlerClient {
 
   async getUserOperationByHash(userOpHash) {
     try {
-      return await this.rpc('eth_getUserOperationByHash', [userOpHash]);
+      return this.rpc('eth_getUserOperationByHash', [userOpHash]);
     } catch (err) {
       logger.error('getUserOperationByHash failed:', err.message);
       throw err;
@@ -88,11 +85,11 @@ class BundlerClient {
   }
 
   async supportedEntryPoints() {
-    return await this.rpc('eth_supportedEntryPoints');
+    return this.rpc('eth_supportedEntryPoints');
   }
 
   async chainId() {
-    return await this.rpc('eth_chainId');
+    return this.rpc('eth_chainId');
   }
 
   async waitForReceipt(userOpHash, { timeoutMs = 120000, pollMs = 3000 } = {}) {

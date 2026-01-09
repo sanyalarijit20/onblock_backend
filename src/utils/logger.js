@@ -57,7 +57,7 @@ if (!isVercel && (NODE_ENV === 'production' || process.env.ENABLE_FILE_LOGGING =
     transports.push(combinedFileTransport);
 
     errorFileTransport.on('rotate', (oldFilename, newFilename) => {
-      console.log(`Log file rotated: ${oldFilename} -> ${newFilename}`);
+      logger.info(`Log file rotated: ${oldFilename} -> ${newFilename}`);
     });
   }
 }
