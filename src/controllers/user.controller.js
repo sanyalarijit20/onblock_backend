@@ -49,7 +49,6 @@ const getProfile = async (req, res) => {
       phoneNumber: u.phoneNumber,
       fullName: u.fullName,
       biometricEnabled: u.biometricEnabled,
-      facialRecognitionEnabled: u.facialRecognitionEnabled,
       walletId: u.walletId,
       isActive: u.isActive,
       lastLogin: u.lastLogin,

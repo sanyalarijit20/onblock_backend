@@ -3,8 +3,7 @@ const Wallet = require('../models/wallet.model');
 const { successResponse, errorResponse } = require('../utils/response');
 const {
   analyzeFraud,
-  verifyBiometric,
-  verifyFacial
+  verifyBiometric
 } = require('../services/fraud_ml.service');
 const {
   buildTransferCallData,
@@ -23,8 +22,7 @@ const logger = require('../utils/logger');
 
 const sendTransaction = async (req, res) => {
   try {
-    const { to, amount, token, network, biometricData, facialData, metadata } =
-      req.body;
+    const { to, amount, token, network, biometricData, metadata } = req.body;
 
     const userId = req.userId;
     const user = req.user;
@@ -55,18 +53,7 @@ const sendTransaction = async (req, res) => {
       );
     }
 
-    /* =========================
-       FACIAL (OPTIONAL)
-    ========================= */
-    let facialVerified = false;
-
-    if (facialData) {
-      const facialResult = await verifyFacial(
-        facialData,
-        userId.toString()
-      );
-      facialVerified = facialResult?.verified === true;
-    }
+    
 
     /* =========================
        FRAUD ANALYSIS (NON-BLOCKING)
@@ -105,8 +92,7 @@ const sendTransaction = async (req, res) => {
         ...fraudAnalysis,
         flagged: isFlagged
       },
-      biometricVerified: true,
-      facialVerified
+      biometricVerified: true
     });
 
     /* =========================

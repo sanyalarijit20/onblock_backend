@@ -113,17 +113,7 @@ const requireBiometric = (req, res, next) => {
   next();
 };
 
-const requireFacial = (req, res, next) => {
-  if (!req.user) {
-    return errorResponse(res, 'Authentication required', 401, 'AUTH_REQUIRED');
-  }
-
-  if (!req.user.facialRecognitionEnabled) {
-    return errorResponse(res, 'Facial verification required', 403, 'FACIAL_REQUIRED');
-  }
-
-  next();
-};
+ 
 
 const requireKYC = (req, res, next) => {
   if (!req.user) {
@@ -148,10 +138,6 @@ const requireFullVerification = (req, res, next) => {
 
   if (!req.user.biometricEnabled) {
     return errorResponse(res, 'Biometric verification required', 403, 'BIOMETRIC_REQUIRED');
-  }
-
-  if (!req.user.facialRecognitionEnabled) {
-    return errorResponse(res, 'Facial verification required', 403, 'FACIAL_REQUIRED');
   }
 
   if (!req.user.isKYCComplete || !req.user.isKYCComplete()) {
@@ -208,7 +194,6 @@ module.exports = {
   authenticate,
   optionalAuth,
   requireBiometric,
-  requireFacial,
   requireKYC,
   requireWallet,
   requireFullVerification,

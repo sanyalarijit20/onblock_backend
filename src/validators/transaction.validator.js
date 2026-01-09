@@ -65,12 +65,6 @@ const validateSendTransaction = [
     .isString()
     .withMessage('Biometric data must be a string'),
   
-  body('facialData')
-    .notEmpty()
-    .withMessage('Facial verification required')
-    .isString()
-    .withMessage('Facial data must be a string'),
-  
   body('metadata')
     .optional()
     .isObject()
@@ -137,9 +131,6 @@ const validateSwapTransaction = [
     .notEmpty()
     .withMessage('Biometric verification required'),
   
-  body('facialData')
-    .notEmpty()
-    .withMessage('Facial verification required'),
   
   handleValidationErrors
 ];

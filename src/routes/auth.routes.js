@@ -9,9 +9,7 @@ const {
   validateOtpRequest,
   validateOtpVerify,
   validateBiometricSetup,
-  validateFacialSetup,
   validateBiometricVerify,
-  validateFacialVerify,
   validatePasswordChange,
   validatePasswordReset,
   validatePasswordResetConfirm
@@ -32,10 +30,6 @@ router.post('/otp/verify', otpLimiter, validateOtpVerify, authController.verifyO
 router.post('/biometric/setup', authenticate, biometricLimiter, validateBiometricSetup, authController.setupBiometric);
 
 router.post('/biometric/verify', authenticate, biometricLimiter, validateBiometricVerify, authController.verifyBiometric);
-
-router.post('/facial/setup', authenticate, biometricLimiter, validateFacialSetup, authController.setupFacial);
-
-router.post('/facial/verify', authenticate, biometricLimiter, validateFacialVerify, authController.verifyFacial);
 
 router.post('/password/change', authenticate, authLimiter, validatePasswordChange, authController.changePassword);
 

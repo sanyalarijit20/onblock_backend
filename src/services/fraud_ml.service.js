@@ -1,7 +1,7 @@
 /**
 * FRAUD ML SERVICE (DEMO MOCK)
 * * In production, this service would communicate with Python microservices
-* for Isolation Forest (Fraud) and FaceNet/ArcFace (Biometrics).
+* for Isolation Forest (Fraud) and biometric verification services.
 * * FOR DEMO: Returns simulated success responses to unblock the frontend flow.
 */
 
@@ -13,7 +13,6 @@ const config = require('../config/env');
 const ML_BASE = config.ML_SERVICE_URL;
 const FRAUD_ENDPOINT = config.ML_FRAUD_DETECTION_ENDPOINT || '/check-fraud';
 const BIOMETRIC_ENDPOINT = config.ML_BIOMETRIC_VERIFICATION_ENDPOINT;
-const FACIAL_ENDPOINT = config.ML_FACIAL_RECOGNITION_ENDPOINT;
 const ML_TIMEOUT = config.ML_SERVICE_TIMEOUT || 30000;
 
 
@@ -81,37 +80,10 @@ const verifyBiometric = async (bioData, userId) => {
 };
 
 
-/**
-* Verifies facial geometry against enrolled reference.
-* @param {Object} facialData - { landmarks, imageData }
-* @param {String} userId
-*/
-const verifyFacial = async (facialData, userId) => {
-  logger.info(`Verifying facial identity for user ${userId}`);
-
-  if (ML_BASE && FACIAL_ENDPOINT) {
-    try {
-      const url = `${ML_BASE.replace(/\/$/, '')}${FACIAL_ENDPOINT}`;
-      const resp = await axios.post(url, { facialData, userId }, { timeout: ML_TIMEOUT });
-      return resp.data;
-    } catch (err) {
-      logger.warn('Facial ML service unreachable, falling back to demo', err.message);
-    }
-  }
-
-  if (!facialData || !facialData.imageData) {
-    logger.warn('Facial verification missing image data');
-    return { verified: true, confidence: 0.95 };
-  }
-
-  await new Promise((resolve) => setTimeout(resolve, 800));
-  return { verified: true, confidence: 0.98, livenessScore: 0.99 };
-};
 
 
 module.exports = {
  analyzeFraud,
- verifyBiometric,
- verifyFacial
+ verifyBiometric
 };
 

@@ -96,20 +96,6 @@ const validateBiometricSetup = [
   handleValidationErrors
 ];
 
-const validateFacialSetup = [
-  body('facialData')
-    .notEmpty()
-    .withMessage('Facial data is required')
-    .isString()
-    .withMessage('Facial data must be a string'),
-  
-  body('imageData')
-    .optional()
-    .isString()
-    .withMessage('Image data must be a base64 string'),
-  
-  handleValidationErrors
-];
 
 const validateBiometricVerify = [
   body('biometricData')
@@ -121,20 +107,6 @@ const validateBiometricVerify = [
   handleValidationErrors
 ];
 
-const validateFacialVerify = [
-  body('facialData')
-    .notEmpty()
-    .withMessage('Facial data is required')
-    .isString()
-    .withMessage('Facial data must be a string'),
-  
-  body('imageData')
-    .optional()
-    .isString()
-    .withMessage('Image data must be a base64 string'),
-  
-  handleValidationErrors
-];
 
 const validatePasswordChange = [
   body('currentPassword')
@@ -184,9 +156,7 @@ module.exports = {
   validateOtpRequest,
   validateOtpVerify,
   validateBiometricSetup,
-  validateFacialSetup,
   validateBiometricVerify,
-  validateFacialVerify,
   validatePasswordChange,
   validatePasswordReset,
   validatePasswordResetConfirm

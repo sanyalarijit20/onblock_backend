@@ -46,7 +46,6 @@ const userSchema = new mongoose.Schema(
     },
 
     biometricData: {
-      faceEncoding: { type: String, select: false },
       fingerprintHash: { type: String, select: false },
       lastVerified: Date,
       isVerified: { type: Boolean, default: false },

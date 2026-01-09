@@ -110,7 +110,6 @@ const transactionSchema = new mongoose.Schema(
     },
 
     biometricVerified: { type: Boolean, default: false },
-    facialVerified: { type: Boolean, default: false },
 
     metadata: {
       description: String,

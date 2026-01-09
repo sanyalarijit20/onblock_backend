@@ -43,7 +43,6 @@ const config = {
   
   ML_SERVICE_URL: getEnvVar('ML_SERVICE_URL', 'http://localhost:8000'),
   ML_SERVICE_API_KEY: getEnvVar('ML_SERVICE_API_KEY', ''),
-  ML_FACIAL_RECOGNITION_ENDPOINT: getEnvVar('ML_FACIAL_RECOGNITION_ENDPOINT', '/api/v1/facial-recognition'),
   ML_FRAUD_DETECTION_ENDPOINT: getEnvVar('ML_FRAUD_DETECTION_ENDPOINT', '/api/v1/fraud-detection'),
   ML_BIOMETRIC_VERIFICATION_ENDPOINT: getEnvVar('ML_BIOMETRIC_VERIFICATION_ENDPOINT', '/api/v1/biometric-verification'),
   ML_SERVICE_TIMEOUT: parseInt(getEnvVar('ML_SERVICE_TIMEOUT', '30000'), 10),

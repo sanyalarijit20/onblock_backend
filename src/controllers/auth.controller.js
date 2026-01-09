@@ -124,8 +124,6 @@ exports.requestOtp = async (req, res) => successResponse(res, null, 'OTP Sent (P
 exports.verifyOtp = async (req, res) => successResponse(res, null, 'OTP Verified (Placeholder)');
 exports.setupBiometric = async (req, res) => successResponse(res, null, 'Biometric Setup (Placeholder)');
 exports.verifyBiometric = async (req, res) => successResponse(res, null, 'Biometric Verified (Placeholder)');
-exports.setupFacial = async (req, res) => successResponse(res, null, 'Facial Setup (Placeholder)');
-exports.verifyFacial = async (req, res) => successResponse(res, null, 'Facial Verified (Placeholder)');
 exports.changePassword = async (req, res) => successResponse(res, null, 'Password Changed (Placeholder)');
 exports.requestPasswordReset = async (req, res) => successResponse(res, null, 'Reset Link Sent (Placeholder)');
 exports.confirmPasswordReset = async (req, res) => successResponse(res, null, 'Password Reset (Placeholder)');
