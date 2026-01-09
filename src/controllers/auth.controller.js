@@ -1,8 +1,11 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/user.model');
+const Wallet = require('../models/wallet.model');
+const { ethers } = require('ethers');
 const config = require('../config/env');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
+const { airdropInitialFunds } = require('../services/faucet_services');
 
 // Helper for JWT
 const signToken = (id, secret, expire) => {
@@ -18,6 +21,32 @@ exports.register = async (req, res) => {
 
         const user = await User.create({ email, password, firstName, lastName, phoneNumber });
         const token = signToken(user._id, config.JWT_SECRET, config.JWT_EXPIRE);
+
+        // Create a simple default EOA wallet for the user so we have an address to airdrop to.
+        try {
+            const generated = ethers.Wallet.createRandom();
+            const network = process.env.DEFAULT_NETWORK || 'sepolia';
+
+            const newWallet = await Wallet.create({
+                userId: user._id,
+                address: generated.address,
+                network,
+                isActive: true,
+                isPrimary: true
+            });
+
+            // Link wallet to user record
+            user.walletId = newWallet._id;
+            await user.save({ validateBeforeSave: false });
+
+            // Fire-and-forget the faucet airdrop (log result)
+            airdropInitialFunds(user._id, newWallet.smartAccountAddress, network)
+              .then(result => logger.info('Airdrop result:', result))
+              .catch(err => logger.error('Airdrop failed:', err));
+        } catch (wErr) {
+            logger.error('Failed to create default wallet for user:', wErr);
+            // continue - registration succeeded even if wallet creation or airdrop fails
+        }
 
         return successResponse(res, { user, token }, 'Registration successful', 201);
     } catch (err) {
