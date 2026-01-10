@@ -6,41 +6,41 @@ const { authLimiter, otpLimiter, biometricLimiter } = require('../middlewares/ra
 const {
   validateRegister,
   validateLogin,
+  validateFacialSetup,
+  validateBiometricSetup,
   validateOtpRequest,
   validateOtpVerify,
-  validateBiometricSetup,
   validateBiometricVerify,
   validatePasswordChange,
   validatePasswordReset,
   validatePasswordResetConfirm
 } = require('../validators/auth.validator');
 
+// Step 1: Registration
 router.post('/register', authLimiter, validateRegister, authController.register);
 
+// NEW Step 2: Facial Identity Setup (Identity Enrollment)
+router.post('/facial/setup', authenticate, biometricLimiter, validateFacialSetup, authController.setupFacial);
+
+// Step 3: Biometric/Device Binding
+router.post('/biometric/setup', authenticate, biometricLimiter, validateBiometricSetup, authController.setupBiometric);
+
+// Standard Auth Routes
 router.post('/login', authLimiter, validateLogin, authController.login);
-
 router.post('/logout', authenticate, authController.logout);
-
 router.post('/refresh-token', authController.refreshToken);
 
 router.post('/otp/request', otpLimiter, validateOtpRequest, authController.requestOtp);
-
 router.post('/otp/verify', otpLimiter, validateOtpVerify, authController.verifyOtp);
-
-router.post('/biometric/setup', authenticate, biometricLimiter, validateBiometricSetup, authController.setupBiometric);
 
 router.post('/biometric/verify', authenticate, biometricLimiter, validateBiometricVerify, authController.verifyBiometric);
 
 router.post('/password/change', authenticate, authLimiter, validatePasswordChange, authController.changePassword);
-
 router.post('/password/reset', authLimiter, validatePasswordReset, authController.requestPasswordReset);
-
 router.post('/password/reset/confirm', authLimiter, validatePasswordResetConfirm, authController.confirmPasswordReset);
 
 router.get('/me', authenticate, authController.getProfile);
-
 router.put('/profile', authenticate, authController.updateProfile);
-
 router.delete('/account', authenticate, authController.deleteAccount);
 
 module.exports = router;

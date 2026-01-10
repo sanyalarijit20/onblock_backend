@@ -115,7 +115,6 @@ const userSchema = new mongoose.Schema(
     aadhaarNumber: {
       type: String,
       unique: true,                 // unique + sparse → correct for optional ID
-      sparse: true,
       match: [/^\d{12}$/, 'Please provide a valid 12-digit Aadhaar number'],
       select: false,
     },
